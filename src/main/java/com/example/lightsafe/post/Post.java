@@ -1,5 +1,5 @@
 package com.example.lightsafe.post;
 
 public class Post {
-            int a =10;
+            int a =5;
 }
