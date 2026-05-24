@@ -14,7 +14,7 @@ import java.util.List;
 public class CctvService {
 
     private final String BASE_URL = "https://apis.data.go.kr/1741000/cctv_info/info";
-    private final String SERVICE_KEY = "220b9284fa5def0bedb81becf5a1acd178e2ce9dd6d3d8b062ac34981c5b7a14";
+    private final String SERVICE_KEY = "***********공공api*****************";
 
     public List<CctvDto> getCctvData() {
 
