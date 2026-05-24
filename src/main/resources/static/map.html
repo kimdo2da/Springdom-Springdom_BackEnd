@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <title>세이프라이트.CCTV 지도</title>
 
-    <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=***************카카오api키자리입니다."></script>
+    <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=b0cb55172bf6c4a1115788c58a8a0021&libraries=clusterer"></script>
 
     <style>
         #map {
@@ -29,7 +29,7 @@
             level: 7
         });
 
-        // 🔥 1. 클러스터러 생성 (핵심)
+        // 클러스터러 생성
         var clusterer = new kakao.maps.MarkerClusterer({
             map: map,
             averageCenter: true,
@@ -37,31 +37,33 @@
             disableClickZoom: false
         });
 
-        // 스프링 부트 서버로 CCTV 데이터 요청
-        fetch("http://localhost:8080/cctv")
+        // 🔥 2. 스프링 부트 서버로 CCTV 데이터 요청 (명세서 규칙 /cctvs 적용)
+        fetch("http://localhost:8080/cctvs")
             .then(res => res.json())
-            .then(data => {
+            .then(response => {
 
-                console.log("CCTV 개수:", data.length);
+                // 🔥 3. 공통 응답 구조 {success, data, message}에서 data 배열 추출
+                var cctvList = response.data;
+                console.log("CCTV 개수:", cctvList.length);
 
                 var markers = [];
 
-                for (var i = 0; i < data.length; i++) {
+                for (var i = 0; i < cctvList.length; i++) {
 
+                    // 🔥 4. 명세서에 약속된 변수명 latitude, longitude 적용
                     var pos = new kakao.maps.LatLng(
-                        parseFloat(data[i].lat),
-                        parseFloat(data[i].lng)
+                        parseFloat(cctvList[i].latitude),
+                        parseFloat(cctvList[i].longitude)
                     );
 
                     var marker = new kakao.maps.Marker({
                         position: pos
-                        // ❌ map에 직접 넣으면 안 됨
                     });
 
                     markers.push(marker);
                 }
 
-                // 🔥 2. 한 번에 클러스터에 추가 (성능 핵심)
+                // 한 번에 클러스터에 추가 (성능 핵심)
                 clusterer.addMarkers(markers);
 
             })

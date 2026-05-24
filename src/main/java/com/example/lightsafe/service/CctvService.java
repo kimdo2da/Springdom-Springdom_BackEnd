@@ -14,7 +14,7 @@ import java.util.List;
 public class CctvService {
 
     private final String BASE_URL = "https://apis.data.go.kr/1741000/cctv_info/info";
-    private final String SERVICE_KEY = "**********공공api키자리입니다.";
+    private final String SERVICE_KEY = "220b9284fa5def0bedb81becf5a1acd178e2ce9dd6d3d8b062ac34981c5b7a14";
 
     public List<CctvDto> getCctvData() {
 
@@ -65,18 +65,21 @@ public class CctvService {
                         address = item.path("LCTN_ROAD_NM_ADDR").asText("");
                     }
 
-                    String lat = item.path("WGS84_LAT").asText("");
-                    String lng = item.path("WGS84_LOT").asText("");
+                    // 위도 경도 문자열로 임시 저장
+                    String latStr = item.path("WGS84_LAT").asText("");
+                    String lngStr = item.path("WGS84_LOT").asText("");
 
-                    if (lat.isEmpty() || lng.isEmpty() || address.isEmpty()) continue;
+                    if (latStr.isEmpty() || lngStr.isEmpty() || address.isEmpty()) continue;
 
                     // 🔥 4. 서울 필터 적용
                     if (!(address.contains("서울") || address.contains("Seoul"))) continue;
 
+                    // ⭐ 5. API 명세서 규칙에 맞게 DTO 세팅 (수정된 부분) ⭐
                     CctvDto dto = new CctvDto();
-                    dto.setLat(lat);
-                    dto.setLng(lng);
-                    dto.setAddress(address);
+                    dto.setCctvId((long) (list.size() + 1)); // 리스트 크기를 활용해 가짜 ID 부여
+                    dto.setCctvName(address); // 주소를 CCTV 이름으로 대신 사용
+                    dto.setLatitude(Double.parseDouble(latStr)); // String을 Double로 변환 (lat -> latitude)
+                    dto.setLongitude(Double.parseDouble(lngStr)); // String을 Double로 변환 (lng -> longitude)
                     dto.setPurpose(item.path("INSTL_PRPS_SE_NM").asText(""));
 
                     list.add(dto);

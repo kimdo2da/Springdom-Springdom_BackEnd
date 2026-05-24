@@ -5,7 +5,7 @@
     <title>Lightsafe Map</title>
 
     <script type="text/javascript"
-            src="//dapi.kakao.com/v2/maps/sdk.js?appkey=***************카카오api키자리입니다.">
+            src="//dapi.kakao.com/v2/maps/sdk.js?appkey=b0cb55172bf6c4a1115788c58a8a0021&libraries=clusterer">
     </script>
 </head>
 
@@ -16,14 +16,54 @@
 <div id="map" style="width:100%;height:500px;"></div>
 
 <script>
+    // 1. 지도 띄우기
     var container = document.getElementById('map');
-
     var options = {
-        center: new kakao.maps.LatLng(37.5665, 126.9780),
-        level: 3
+        center: new kakao.maps.LatLng(37.5665, 126.9780), // 서울 중심 좌표
+        level: 8 // 여러 마커를 보기 위해 레벨을 조금 넓게(8) 설정했습니다.
     };
-
     var map = new kakao.maps.Map(container, options);
+
+    // 2. 마커 클러스터러(그룹화) 초기 설정
+    var clusterer = new kakao.maps.MarkerClusterer({
+        map: map, // 마커들을 클러스터로 관리하고 표시할 지도 객체
+        averageCenter: true, // 클러스터에 포함된 마커들의 평균 위치를 클러스터 마커 위치로 설정
+        minLevel: 6 // 클러스터 할 최소 지도 레벨
+    });
+
+    // 🔥 3. 백엔드 서버에 CCTV 데이터 요청 (명세서 규칙 적용)
+    // 주소를 /cctv 가 아닌 /cctvs 로 요청합니다.
+    fetch("http://localhost:8080/cctvs")
+        .then(res => res.json())
+        .then(response => {
+            // 🔥 4. 공통 응답 포맷 {success, data, message} 에서 'data' 배열만 쏙 빼옵니다.
+            var cctvList = response.data;
+            console.log("불러온 CCTV 개수:", cctvList.length);
+
+            var markers = [];
+
+            // 5. 반복문을 돌며 마커 생성
+            for (var i = 0; i < cctvList.length; i++) {
+                // 🔥 6. 명세서에 약속된 변수명 latitude, longitude를 정확히 사용합니다.
+                var pos = new kakao.maps.LatLng(
+                    cctvList[i].latitude,
+                    cctvList[i].longitude
+                );
+
+                var marker = new kakao.maps.Marker({
+                    position: pos
+                });
+
+                markers.push(marker);
+            }
+
+            // 7. 클러스터러에 생성된 마커들을 한 번에 추가합니다.
+            clusterer.addMarkers(markers);
+        })
+        .catch(err => {
+            console.error("CCTV 데이터를 불러오는데 실패했습니다:", err);
+        });
+
 </script>
 
 </body>
