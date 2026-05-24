@@ -1,4 +1,4 @@
-package com.example.lightsafe.util;
+package com.example.lightsafe.user.util;
 
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;

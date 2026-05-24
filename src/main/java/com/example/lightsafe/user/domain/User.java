@@ -1,4 +1,4 @@
-package com.example.lightsafe.domain;
+package com.example.lightsafe.user.domain;
 
 import jakarta.persistence.*;
 import lombok.Getter;

@@ -1,6 +1,6 @@
-package com.example.lightsafe.repository;
+package com.example.lightsafe.user.repository;
 
-import com.example.lightsafe.domain.User;
+import com.example.lightsafe.user.domain.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

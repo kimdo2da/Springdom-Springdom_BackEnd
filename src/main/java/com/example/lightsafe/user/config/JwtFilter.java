@@ -1,6 +1,6 @@
-package com.example.lightsafe.config;
+package com.example.lightsafe.user.config;
 
-import com.example.lightsafe.util.JwtUtil;
+import com.example.lightsafe.user.util.JwtUtil;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

@@ -1,12 +1,12 @@
-package com.example.lightsafe.controller;
+package com.example.lightsafe.user.controller;
 
-import com.example.lightsafe.domain.User;
-import com.example.lightsafe.dto.ApiResponse;
-import com.example.lightsafe.dto.UserLoginRequest;
-import com.example.lightsafe.dto.UserRegisterRequest;
-import com.example.lightsafe.dto.UserUpdateRequest;
-import com.example.lightsafe.repository.UserRepository;
-import com.example.lightsafe.util.JwtUtil;
+import com.example.lightsafe.user.domain.User;
+import com.example.lightsafe.user.dto.ApiResponse;
+import com.example.lightsafe.user.dto.UserLoginRequest;
+import com.example.lightsafe.user.dto.UserRegisterRequest;
+import com.example.lightsafe.user.dto.UserUpdateRequest;
+import com.example.lightsafe.user.repository.UserRepository;
+import com.example.lightsafe.user.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
