@@ -23,24 +23,19 @@ public class JwtFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
-
         String header = request.getHeader("Authorization");
 
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
-
             try {
                 Long userId = jwtUtil.extractUserId(token);
-
                 UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(userId, null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
                 SecurityContextHolder.getContext().setAuthentication(auth);
-
             } catch (Exception e) {
                 System.out.println("🚨 [JwtFilter] 토큰 해독 중 에러 발생: " + e.getMessage());
                 e.printStackTrace();
             }
         }
-
         filterChain.doFilter(request, response);
     }
 }
