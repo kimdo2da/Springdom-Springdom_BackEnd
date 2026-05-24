@@ -19,10 +19,29 @@ repositories {
 }
 
 dependencies {
-	implementation 'org.springframework.boot:spring-boot-starter-session-jdbc'
-	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
-	testImplementation 'org.springframework.boot:spring-boot-starter-session-jdbc-test'
-	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	// ⭐️ 웹 (API) 구동을 위한 필수 부품
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+
+	// ⭐️ JPA: 자바 코드와 DB 테이블을 연결
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+	// ⭐️ MySQL 데이터베이스 연결 드라이버 (이게 있어야 DB에 붙습니다!)
+	runtimeOnly 'com.mysql:mysql-connector-j'
+
+	// ⭐️ 스프링 시큐리티 (비밀번호 암호화 및 보안 담당)
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+
+	// ⭐️ JWT 토큰 관련 라이브러리
+	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+
+	// ⭐️ 롬복 (코드 간략화)
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+
+	// 테스트용 부품들
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
