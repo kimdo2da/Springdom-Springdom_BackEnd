@@ -1,4 +1,4 @@
-package com.example.lightsafe.user.dto;
+package com.example.lightsafe.user;
 
 public class UserRegisterRequest {
     private String username;

@@ -1,4 +1,4 @@
-package com.example.lightsafe.user.dto;
+package com.example.lightsafe.user;
 
 public class ApiResponse<T> {
     private boolean success;
