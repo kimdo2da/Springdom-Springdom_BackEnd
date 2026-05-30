@@ -4,7 +4,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import java.util.*;
 
 @Service
@@ -202,4 +203,27 @@ public class UserService {
         User user = getUserById(loginUserId);
         return user.isBlacklisted();
     }
+
+    // ==========================================
+    // [공통 기능] 현재 로그인한 사용자 정보 가져오기 (게시판 연동용)
+    // ==========================================
+    @Transactional(readOnly = true)
+    public User getCurrentUser() {
+        // 1. 스프링 시큐리티 컨텍스트에서 현재 인증(토큰) 정보를 가져옵니다.
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        // 2. 인증 정보가 없거나 익명 사용자(비로그인)인 경우 null 반환
+        if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
+            return null;
+        }
+
+        // 3. 토큰에서 추출된 principal(여기서는 userId 문자열 또는 Long 타입으로 가정)을 가져옵니다.
+        // JwtFilter에서 principal을 어떻게 세팅했는지에 따라 형변환 로직은 조금 달라질 수 있습니다.
+        Long loginUserId = Long.valueOf(authentication.getName());
+
+        // 4. DB에서 해당 유저 엔티티를 찾아서 반환합니다.
+        return userRepository.findById(loginUserId)
+                .orElseThrow(() -> new IllegalArgumentException("토큰에 해당하는 유저를 찾을 수 없습니다."));
+    }
+
 }
