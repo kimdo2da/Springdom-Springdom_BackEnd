@@ -205,7 +205,7 @@ public class UserService {
     }
 
     // ==========================================
-    // [공통 기능] 현재 로그인한 사용자 정보 가져오기 (게시판 연동용)
+    // 현재 로그인한 사용자 정보 가져오기 (게시판 연동용)
     // ==========================================
     @Transactional(readOnly = true)
     public User getCurrentUser() {
@@ -226,4 +226,24 @@ public class UserService {
                 .orElseThrow(() -> new IllegalArgumentException("토큰에 해당하는 유저를 찾을 수 없습니다."));
     }
 
+    // ==========================================
+    // [공통 기능] 타 도메인 연동용 (허위신고 패널티 부과)
+    // ==========================================
+    @Transactional
+    public void addFalseReportPenalty(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다."));
+
+        // 허위신고 횟수 1 증가
+        int nextCount = user.getFalseReportCount() + 1;
+        user.setFalseReportCount(nextCount);
+
+        // 3회 이상이면 블랙리스트 처리
+        if (nextCount >= 3) {
+            user.setBlacklisted(true);
+        }
+
+        // 변경된 상태 저장
+        userRepository.save(user);
+    }
 }
