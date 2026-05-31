@@ -1,4 +1,4 @@
-package com.example.lightsafe.dto;
+package com.example.lightsafe.safe;
 
 import lombok.Getter;
 import lombok.Setter;

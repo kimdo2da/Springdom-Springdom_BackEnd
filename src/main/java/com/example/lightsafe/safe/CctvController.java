@@ -1,8 +1,5 @@
-package com.example.lightsafe.controller;
+package com.example.lightsafe.safe;
 
-import com.example.lightsafe.dto.ApiResponse; // 🔥 1. 새롭게 만든 공통 응답 DTO 임포트
-import com.example.lightsafe.dto.CctvDto;
-import com.example.lightsafe.service.CctvService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
