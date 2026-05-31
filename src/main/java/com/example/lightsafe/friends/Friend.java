@@ -38,7 +38,7 @@ public class Friend {
 
     // 4. 긴급 위치 공유 허용 여부 (기본값: false)
     @Column(name = "is_emergency_allowed", nullable = false)
-    private boolean isEmergencyAllowed;
+    private boolean isEmergencyAllowed = false;
 
     // 5. 요청 생성 시간
     @CreationTimestamp
