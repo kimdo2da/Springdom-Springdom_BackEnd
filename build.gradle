@@ -98,6 +98,8 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	//>>>>>>> develop
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	//이거 추가 긴급신고
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
 }
 
 tasks.named('test') {
