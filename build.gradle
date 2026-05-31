@@ -19,6 +19,11 @@ repositories {
 }
 
 dependencies {
+//<<<<<<< HEAD
+	  //implementation 'org.springframework.boot:spring-boot-starter-session-jdbc'
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	  //testImplementation 'org.springframework.boot:spring-boot-starter-session-jdbc-test'
+	// =======
 	//<<<<<<< HEAD
 	// =========================
 	// 기본 Web
@@ -70,6 +75,7 @@ dependencies {
 	// =========================
 	// Test
 	// =========================
+//>>>>>>> develop
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
 	//=======
@@ -98,8 +104,14 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	//>>>>>>> develop
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+//<<<<<< HEAD
+	implementation 'com.fasterxml.jackson.core:jackson-databind'
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+//=======
 	//이거 추가 긴급신고
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
+//>>>>>>> develop
 }
 
 tasks.named('test') {
