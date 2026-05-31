@@ -29,12 +29,9 @@ public class SecurityConfig {
                                 "/users/login",
                                 "/map.html",
                                 "/cctvs",
-                                "/cctvs/**"
-
-
-
-
-                        ).permitAll()
+                                "/cctvs/**",
+                                "/favicon.ico"
+                                ).permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(new JwtFilter(jwtUtil), UsernamePasswordAuthenticationFilter.class);
