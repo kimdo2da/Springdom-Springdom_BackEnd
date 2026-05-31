@@ -10,7 +10,7 @@ description = 'lightsafe'
 
 java {
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(17)
+		languageVersion = JavaLanguageVersion.of(21)
 	}
 }
 
@@ -19,6 +19,60 @@ repositories {
 }
 
 dependencies {
+	//<<<<<<< HEAD
+	// =========================
+	// 기본 Web
+	// =========================
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+
+	// =========================
+	// DB / JPA
+	// =========================
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	runtimeOnly 'com.mysql:mysql-connector-j'
+
+	// =========================
+	// Validation
+	// @Valid, @NotBlank, @NotNull 사용
+	// =========================
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	// =========================
+	// Lombok
+	// @Getter, @Setter, @NoArgsConstructor 등
+	// =========================
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+
+	// =========================
+	// Security
+	// 로그인/JWT/권한 처리할 때 사용
+	// 지금 당장 Security 설정 없으면 주석 유지 추천
+	// =========================
+	// implementation 'org.springframework.boot:spring-boot-starter-security'
+
+	// =========================
+	// Session JDBC
+	// 세션 로그인 방식으로 갈 때 사용
+	// JWT 방식이면 보통 필요 없음
+	// 지금은 주석 유지 추천
+	// =========================
+	// implementation 'org.springframework.boot:spring-boot-starter-session-jdbc'
+	// testImplementation 'org.springframework.boot:spring-boot-starter-session-jdbc-test'
+
+	// =========================
+	// Swagger / OpenAPI
+	// API 문서 자동화할 때 사용
+	// Spring Boot 4에서 호환 문제 나면 나중에 버전 확인 필요
+	// =========================
+	// implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.4'
+
+	// =========================
+	// Test
+	// =========================
+	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+	//=======
 	// ⭐️ 웹 (API) 구동을 위한 필수 부품
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 
@@ -42,6 +96,7 @@ dependencies {
 
 	// 테스트용 부품들
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	//>>>>>>> develop
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
