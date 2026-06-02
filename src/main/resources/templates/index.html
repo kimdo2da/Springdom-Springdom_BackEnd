@@ -2,90 +2,105 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>세이프라이트 CCTV 지도</title>
-
+    <title>세이프라이트(SafeLight) - CCTV 및 안전 경로</title>
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=b0cb55172bf6c4a1115788c58a8a0021&libraries=clusterer"></script>
-
     <style>
         body, html { margin: 0; padding: 0; }
         #map { width: 100%; height: 100vh; }
-        #loading {
-            position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
-            background: rgba(0,0,0,0.7); color: white; padding: 10px 20px;
-            border-radius: 20px; font-weight: bold; z-index: 999; display: none;
-        }
+        #loading { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 10px 20px; border-radius: 20px; font-weight: bold; z-index: 999; display: none; }
+        /* 컨트롤러 UI 스타일 */
+        .controls { position: absolute; top: 20px; left: 20px; z-index: 1000; background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
     </style>
 </head>
 
 <body>
 
+<div class="controls">
+    <button onclick="findSafeRoute()" style="padding: 10px 20px; font-size: 16px; cursor: pointer;">🔍 안전 경로 탐색</button>
+</div>
+
 <div id="map"></div>
-<div id="loading">🚀 수만 개의 CCTV 데이터를 부드럽게 그리는 중...</div>
+<div id="loading">🚀 데이터 로딩 및 렌더링 중...</div>
 
 <script>
+    var map; // 전역 map 변수
+    var clusterer;
+
     window.onload = function () {
         var container = document.getElementById('map');
-        var map = new kakao.maps.Map(container, {
-            center: new kakao.maps.LatLng(37.5665, 126.9780), // 서울 중심
-            level: 8 // 수만 개를 한눈에 보기 좋게 넓은 레벨 적용
+        map = new kakao.maps.Map(container, {
+            center: new kakao.maps.LatLng(37.5665, 126.9780),
+            level: 8
         });
 
-        // ⚡ 클러스터러 최적화 옵션 적용 (격자 크기를 80으로 늘림)
-        var clusterer = new kakao.maps.MarkerClusterer({
+        clusterer = new kakao.maps.MarkerClusterer({
             map: map,
             averageCenter: true,
             minLevel: 6,
-            gridSize: 80,
-            disableClickZoom: false
+            gridSize: 80
         });
 
-        document.getElementById('loading').style.display = 'block';
+        loadCctvData();
+    };
 
-        // 백엔드 데이터 요청
+    // 1. CCTV 데이터 불러오기
+    function loadCctvData() {
+        document.getElementById('loading').style.display = 'block';
         fetch("http://localhost:8080/cctvs")
             .then(res => res.json())
             .then(response => {
                 var cctvList = response.data;
-                console.log("🔥 불러온 CCTV 개수:", cctvList.length);
+                var markers = cctvList.map(c => new kakao.maps.Marker({
+                    position: new kakao.maps.LatLng(c.latitude, c.longitude)
+                }));
+                clusterer.addMarkers(markers);
+                document.getElementById('loading').style.display = 'none';
+            });
+    }
 
-                // ⚡ 브라우저 멈춤 방지를 위한 분할(Chunk) 처리
-                var chunkSize = 5000;
-                var currentIndex = 0;
+    // 2. 안전 경로 탐색 요청
+    function findSafeRoute() {
+        const requestData = { startLat: 37.5665, startLng: 126.9780, endLat: 37.5510, endLng: 126.9880 };
 
-                function renderChunk() {
-                    var chunkMarkers = [];
-                    var end = Math.min(currentIndex + chunkSize, cctvList.length);
-
-                    for (var i = currentIndex; i < end; i++) {
-                        var pos = new kakao.maps.LatLng(
-                            parseFloat(cctvList[i].latitude),
-                            parseFloat(cctvList[i].longitude)
-                        );
-                        chunkMarkers.push(new kakao.maps.Marker({ position: pos }));
-                    }
-
-                    // 쪼개진 마커들을 먼저 지도에 올림
-                    clusterer.addMarkers(chunkMarkers);
-                    currentIndex = end;
-
-                    if (currentIndex < cctvList.length) {
-                        // 남은 데이터가 있으면 0.01초 쉬고 다시 그리기 (멈춤 방지)
-                        setTimeout(renderChunk, 10);
-                    } else {
-                        // 모든 렌더링 종료
-                        document.getElementById('loading').style.display = 'none';
-                        console.log("✅ 렌더링 완벽 종료!");
-                    }
+        fetch("http://localhost:8080/routes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestData)
+        })
+            .then(res => res.json())
+            .then(response => {
+                if(response.success) {
+                    // 서버에서 받은 경로 리스트를 각각 그립니다.
+                    response.data.forEach(route => drawPolyline(route));
+                } else {
+                    alert("경로 탐색 실패: " + response.message);
                 }
-
-                // 렌더링 시작!
-                renderChunk();
             })
             .catch(err => {
-                console.error("fetch 실패:", err);
-                document.getElementById('loading').innerText = "❌ 데이터를 불러오는데 실패했습니다.";
+                console.error("서버 통신 오류:", err);
+                alert("서버와 연결할 수 없습니다. 백엔드 서버를 확인해주세요.");
             });
-    };
+    }
+
+    // 3. 경로 Polyline 그리기
+    function drawPolyline(route) {
+        // 서버에서 온 path 데이터의 각 p(객체)에서 lat, lng 추출
+        var linePath = route.path.map(p => new kakao.maps.LatLng(p.lat, p.lng));
+
+        var polyline = new kakao.maps.Polyline({
+            path: linePath,
+            strokeWeight: 6,
+            strokeColor: '#FF3B45',
+            strokeOpacity: 0.8
+        });
+
+        polyline.setMap(map);
+
+        // 클릭 이벤트 (선택 시 알림 및 기록 준비)
+        kakao.maps.event.addListener(polyline, 'click', function() {
+            alert("경로 선택됨: " + route.description);
+        });
+    }
 </script>
 
 </body>
