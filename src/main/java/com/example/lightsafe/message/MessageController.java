@@ -1,4 +1,4 @@
-package com.example.lightsafe.friends.message;
+package com.example.lightsafe.message;
 
 import com.example.lightsafe.friends.FriendMessageDto;
 import com.example.lightsafe.friends.FriendService;

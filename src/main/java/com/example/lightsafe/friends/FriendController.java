@@ -1,6 +1,6 @@
 package com.example.lightsafe.friends;
 
-import com.example.lightsafe.friends.message.MessageService;
+import com.example.lightsafe.message.MessageService;
 import com.example.lightsafe.user.JwtUtil;
 import com.example.lightsafe.user.ApiResponse;
 import lombok.RequiredArgsConstructor;
@@ -135,7 +135,7 @@ public class FriendController {
             return new ApiResponse<>(false, "BAD_REQUEST", e.getMessage());
         }
     }
-    
+
 
     // 10. 긴급 위치 공유 허용 여부 변경 - PUT /friends/{friends_id}/emergency-allow
     @PutMapping("/{friends_id}/emergency-allow")

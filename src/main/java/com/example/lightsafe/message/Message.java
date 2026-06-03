@@ -1,4 +1,4 @@
-package com.example.lightsafe.friends.message;
+package com.example.lightsafe.message;
 
 import com.example.lightsafe.user.User;
 import jakarta.persistence.*;

@@ -1,4 +1,4 @@
-package com.example.lightsafe.friends.message;
+package com.example.lightsafe.message;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
