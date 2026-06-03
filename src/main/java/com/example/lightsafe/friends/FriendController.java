@@ -135,9 +135,7 @@ public class FriendController {
             return new ApiResponse<>(false, "BAD_REQUEST", e.getMessage());
         }
     }
-
-    // 9. 친구 쪽지 - POST /friends/msg/{user_id}
-    // 메세지 api를 따로 추가했습니다.
+    
 
     // 10. 긴급 위치 공유 허용 여부 변경 - PUT /friends/{friends_id}/emergency-allow
     @PutMapping("/{friends_id}/emergency-allow")
