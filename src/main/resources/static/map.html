@@ -2,77 +2,290 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>세이프라이트.CCTV 지도</title>
-
+    <title>세이프라이트(SafeLight) - CCTV 및 안전 경로</title>
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=b0cb55172bf6c4a1115788c58a8a0021&libraries=clusterer"></script>
-
     <style>
-        #map {
-            width: 100%;
-            height: 100vh;
-        }
+        body, html { margin: 0; padding: 0; font-family: 'Malgun Gothic', dotum, sans-serif; }
+        #map { width: 100%; height: 100vh; }
+        #loading { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 10px 20px; border-radius: 20px; font-weight: bold; z-index: 999; display: none; }
+
+        /* 상단 안내 패널 */
+        .info-panel { position: absolute; top: 20px; left: 20px; z-index: 1000; background: white; padding: 15px 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); width: 260px; }
+        .info-panel h3 { margin: 0 0 10px 0; color: #2c3e50; }
+        .info-panel p { margin: 5px 0; font-size: 14px; font-weight: bold; color: #555; }
+        #status-text { color: #e74c3c; }
+
+        .btn-group { display: flex; gap: 10px; margin-top: 15px; }
+        .btn { padding: 10px; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; transition: 0.3s; }
+        .btn-reset { background: #34495e; }
+        .btn-reset:hover { background: #2c3e50; }
+        .btn-bookmark { background: #f39c12; }
+        .btn-bookmark:hover { background: #d68910; }
+
+        /* 즐겨찾기 목록 패널 */
+        .bookmark-panel { position: absolute; top: 160px; left: 20px; z-index: 1000; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); width: 280px; display: none; max-height: 400px; overflow-y: auto; }
+        .bookmark-item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; transition: 0.2s; }
+        .bookmark-item:hover { background-color: #f1f2f6; border-radius: 8px; }
+        .bookmark-title { font-weight: bold; color: #2980b9; font-size: 15px; margin-bottom: 5px; }
+        .bookmark-score { font-size: 12px; color: #7f8c8d; }
+
+        /* 커스텀 마커 CSS */
+        .custom-marker { background: white; border-radius: 20px; padding: 8px 16px; font-weight: 900; font-size: 14px; box-shadow: 0 4px 8px rgba(0,0,0,0.4); position: relative; margin-bottom: 12px; animation: bounce 0.4s ease-out; }
+        .start-marker { border: 3px solid #27ae60; color: #27ae60; }
+        .end-marker { border: 3px solid #e74c3c; color: #e74c3c; }
+        .custom-marker::after { content: ''; position: absolute; bottom: -11px; left: 50%; transform: translateX(-50%); border-width: 10px 10px 0; border-style: solid; }
+        .start-marker::after { border-color: #27ae60 transparent transparent transparent; }
+        .end-marker::after { border-color: #e74c3c transparent transparent transparent; }
+        @keyframes bounce { 0% { transform: translateY(-15px); opacity: 0.5; } 100% { transform: translateY(0); opacity: 1; } }
     </style>
 </head>
 
 <body>
 
+<div class="info-panel">
+    <h3>📍 안전 경로 탐색기</h3>
+    <p>안내: <span id="status-text">지도에서 '출발지'를 클릭하세요.</span></p>
+    <div class="btn-group">
+        <button class="btn btn-reset" onclick="resetMap()">🔄 초기화</button>
+        <button class="btn btn-bookmark" onclick="toggleBookmarkPanel()">⭐ 내 즐겨찾기</button>
+    </div>
+</div>
+
+<div id="bookmarkPanel" class="bookmark-panel">
+    <h4 style="margin-top:0; color:#2c3e50;">내 안전 경로 목록</h4>
+    <div id="bookmarkListContent">목록을 불러오는 중...</div>
+</div>
+
 <div id="map"></div>
+<div id="loading">🚀 데이터 분석 및 통신 중...</div>
 
 <script>
+    var map;
+    var clusterer;
+
+    var startMarker = null;
+    var endMarker = null;
+    var currentPolyline = null;
 
     window.onload = function () {
-
         var container = document.getElementById('map');
-
-        var map = new kakao.maps.Map(container, {
-            center: new kakao.maps.LatLng(37.5665, 126.9780), // 서울 중심
-            level: 7
+        map = new kakao.maps.Map(container, {
+            center: new kakao.maps.LatLng(37.5665, 126.9780),
+            level: 6
         });
 
-        // 클러스터러 생성
-        var clusterer = new kakao.maps.MarkerClusterer({
-            map: map,
-            averageCenter: true,
-            minLevel: 6,   // 줌 아웃 시 자동 클러스터
-            disableClickZoom: false
+        clusterer = new kakao.maps.MarkerClusterer({
+            map: map, averageCenter: true, minLevel: 6, gridSize: 80
         });
 
-        // 🔥 2. 스프링 부트 서버로 CCTV 데이터 요청 (명세서 규칙 /cctvs 적용)
+        loadCctvData();
+        setupMapClickEvent();
+    };
+
+    function loadCctvData() {
+        document.getElementById('loading').style.display = 'block';
+        document.getElementById('loading').innerText = "CCTV 데이터 로딩 중...";
+
         fetch("http://localhost:8080/cctvs")
             .then(res => res.json())
             .then(response => {
+                var markers = response.data.map(c => new kakao.maps.Marker({
+                    position: new kakao.maps.LatLng(c.latitude, c.longitude)
+                }));
+                clusterer.addMarkers(markers);
+                document.getElementById('loading').style.display = 'none';
+            });
+    }
 
-                // 🔥 3. 공통 응답 구조 {success, data, message}에서 data 배열 추출
-                var cctvList = response.data;
-                console.log("CCTV 개수:", cctvList.length);
+    function setupMapClickEvent() {
+        kakao.maps.event.addListener(map, 'click', function(mouseEvent) {
+            var clickedLatLng = mouseEvent.latLng;
 
-                var markers = [];
+            if (startMarker === null) {
+                startMarker = createCustomMarker(clickedLatLng, '🟢 출발지', 'start');
+                document.getElementById('status-text').innerText = "출발지 설정 완료! '도착지'를 클릭하세요.";
+            }
+            else if (endMarker === null) {
+                endMarker = createCustomMarker(clickedLatLng, '🚩 도착지', 'end');
+                document.getElementById('status-text').innerText = "경로 분석 및 탐색 중입니다...";
+                findSafeRoute(startMarker.getPosition().getLat(), startMarker.getPosition().getLng(),
+                    endMarker.getPosition().getLat(), endMarker.getPosition().getLng());
+            }
+        });
+    }
 
-                for (var i = 0; i < cctvList.length; i++) {
+    function createCustomMarker(latLng, title, type) {
+        var content = `<div class="custom-marker ${type}-marker">${title}</div>`;
+        var customOverlay = new kakao.maps.CustomOverlay({
+            position: latLng, content: content, yAnchor: 1
+        });
+        customOverlay.setMap(map);
+        return customOverlay;
+    }
 
-                    // 🔥 4. 명세서에 약속된 변수명 latitude, longitude 적용
-                    var pos = new kakao.maps.LatLng(
-                        parseFloat(cctvList[i].latitude),
-                        parseFloat(cctvList[i].longitude)
-                    );
+    // 💡 초기화 기능 (안내 메시지도 원상 복구)
+    function resetMap() {
+        if (startMarker) { startMarker.setMap(null); startMarker = null; }
+        if (endMarker) { endMarker.setMap(null); endMarker = null; }
+        if (currentPolyline) { currentPolyline.setMap(null); currentPolyline = null; }
+        document.getElementById('status-text').innerText = "지도에서 '출발지'를 클릭하세요.";
+    }
 
-                    var marker = new kakao.maps.Marker({
-                        position: pos
+    // ⭐ 경로 탐색 (💡 명세서 규칙 반영: startLatitude, startLongitude 등으로 패킷 구성)
+    function findSafeRoute(sLat, sLng, eLat, eLng) {
+        const requestData = {
+            startLatitude: sLat,
+            startLongitude: sLng,
+            endLatitude: eLat,
+            endLongitude: eLng
+        };
+
+        document.getElementById('loading').style.display = 'block';
+
+        fetch("http://localhost:8080/routes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(requestData)
+        })
+            .then(res => res.json())
+            .then(response => {
+                document.getElementById('loading').style.display = 'none';
+                if(response.success && response.data.length > 0) {
+                    document.getElementById('status-text').innerText = "탐색 완료! 다른 경로를 원하면 '초기화'를 누르세요.";
+                    drawPolyline(response.data[0]);
+                } else {
+                    alert("경로 탐색 실패");
+                    resetMap();
+                }
+            });
+    }
+
+    function drawPolyline(route) {
+        if (currentPolyline) currentPolyline.setMap(null);
+
+        // 💡 명세서 규칙 반영: p.lat / p.lng -> p.latitude / p.longitude 로 변경
+        var linePath = route.path.map(p => new kakao.maps.LatLng(p.latitude, p.longitude));
+        currentPolyline = new kakao.maps.Polyline({
+            path: linePath, strokeWeight: 7, strokeColor: '#FF3B45', strokeOpacity: 0.9, strokeStyle: 'solid'
+        });
+        currentPolyline.setMap(map);
+
+        var bounds = new kakao.maps.LatLngBounds();
+        bounds.extend(startMarker.getPosition());
+        bounds.extend(endMarker.getPosition());
+        map.setBounds(bounds);
+
+        // 선을 클릭하면 북마크 저장 시도!
+        kakao.maps.event.addListener(currentPolyline, 'click', function() {
+            var routeName = prompt("⭐ 이 경로를 즐겨찾기에 저장할까요?\n이름을 입력해주세요:", "나만의 안전 경로");
+            if (routeName) {
+                // 💡 명세서 규칙 반영: 전송 DTO 양식 일치화
+                const bookmarkData = {
+                    routeName: routeName,
+                    startLatitude: startMarker.getPosition().getLat(),
+                    startLongitude: startMarker.getPosition().getLng(),
+                    endLatitude: endMarker.getPosition().getLat(),
+                    endLongitude: endMarker.getPosition().getLng(),
+                    safetyScore: route.safetyScore
+                };
+
+                fetch("http://localhost:8080/bookmarks", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(bookmarkData)
+                })
+                    .then(res => res.json())
+                    .then(res => {
+                        if(res.success) alert("🎉 " + routeName + " 저장 완료!");
+                        if (document.getElementById('bookmarkPanel').style.display === 'block') {
+                            loadBookmarks();
+                        }
                     });
+            }
+        });
+    }
 
-                    markers.push(marker);
+    function toggleBookmarkPanel() {
+        var panel = document.getElementById('bookmarkPanel');
+        if (panel.style.display === 'none' || panel.style.display === '') {
+            panel.style.display = 'block';
+            loadBookmarks();
+        } else {
+            panel.style.display = 'none';
+        }
+    }
+
+    // 💡 [수정] 서버(DB)에서 저장된 북마크 가져오기 (ApiResponse 봉투 대응)
+    function loadBookmarks() {
+        var listDiv = document.getElementById('bookmarkListContent');
+        listDiv.innerHTML = "데이터를 불러오는 중...";
+
+        fetch("http://localhost:8080/bookmarks")
+            .then(res => res.json())
+            .then(response => { // 💡 백엔드가 전송한 ApiResponse 전체 파싱
+                var data = response.data; // 💡 그 안에서 실제 리스트 배열 꺼내기
+
+                if (!response.success || data.length === 0) {
+                    listDiv.innerHTML = "저장된 경로가 없습니다.";
+                    return;
                 }
 
-                // 한 번에 클러스터에 추가 (성능 핵심)
-                clusterer.addMarkers(markers);
+                listDiv.innerHTML = "";
+                data.forEach(item => {
+                    var div = document.createElement('div');
+                    div.className = 'bookmark-item';
 
+                    div.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                            <div class="bookmark-title" style="margin-bottom: 0;">📌 ${item.routeName}</div>
+                            <button onclick="deleteBookmark(${item.id}, event)" style="background: none; border: none; color: #e74c3c; cursor: pointer; font-size: 12px; font-weight: bold; padding: 5px;">❌ 삭제</button>
+                        </div>
+                        <div class="bookmark-score">안전 점수: ${item.safetyScore}점</div>
+                    `;
+
+                    // 목록을 클릭하면 해당 좌표로 경로 다시 그리기
+                    div.onclick = function() {
+                        resetMap();
+                        // 💡 명세서 규칙 반영: item.startLat -> item.startLatitude 변경 계열 적용
+                        var sLatLng = new kakao.maps.LatLng(item.startLatitude, item.startLongitude);
+                        var eLatLng = new kakao.maps.LatLng(item.endLatitude, item.endLongitude);
+                        startMarker = createCustomMarker(sLatLng, '🟢 출발지', 'start');
+                        endMarker = createCustomMarker(eLatLng, '🚩 도착지', 'end');
+
+                        findSafeRoute(item.startLatitude, item.startLongitude, item.endLatitude, item.endLongitude);
+                        document.getElementById('status-text').innerText = `'${item.routeName}' 경로를 불러왔습니다.`;
+                    };
+                    listDiv.appendChild(div);
+                });
             })
             .catch(err => {
-                console.error("fetch 실패:", err);
+                listDiv.innerHTML = "데이터를 불러오는데 실패했습니다.";
+                console.error(err);
             });
+    }
 
-    };
+    function deleteBookmark(bookmarkId, event) {
+        event.stopPropagation(); // 부모 리스트 클릭 이벤트 방지
 
+        if (confirm("정말 이 안전 경로를 삭제하시겠습니까?")) {
+            fetch("http://localhost:8080/bookmarks/" + bookmarkId, {
+                method: "DELETE"
+            })
+                .then(res => res.json())
+                .then(res => {
+                    if(res.success) {
+                        alert("🗑️ 삭제되었습니다.");
+                        loadBookmarks();
+                    } else {
+                        alert("삭제 실패: " + res.message);
+                    }
+                })
+                .catch(err => {
+                    console.error("서버 오류:", err);
+                    alert("삭제 중 서버와 통신에 실패했습니다.");
+                });
+        }
+    }
 </script>
 
 </body>

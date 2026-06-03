@@ -24,14 +24,19 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
+                // ... 앞부분 생략 ...
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/users/register",
-                                "/users/login",
-                                "/map.html",
-                                "/cctvs",
-                                "/cctvs/**",
-                                "/favicon.ico"
+                                .requestMatchers(
+                                        "/users/register",
+                                        "/users/login",
+                                        "/map.html",
+                                        "/cctvs",
+                                        "/cctvs/**",
+                                        "/routes",
+                                        "/bookmarks",
+                                        "/bookmarks/**"  // 🔥 이 줄을 꼭 추가해 주세요! (뒤에 뭐가 오든 다 허용)
                                 ).permitAll()
+// ... 뒷부분 생략 ...
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(new JwtFilter(jwtUtil), UsernamePasswordAuthenticationFilter.class);
