@@ -143,6 +143,30 @@ public class UserController {
         }
     }
 
+    // 11. 내 커뮤니티 작성 내역 조회
+    @GetMapping("/my/posts")
+    public ApiResponse<List<Map<String, Object>>> getMyPosts(@RequestHeader("Authorization") String token) {
+        Long loginUserId = extractUserId(token);
+        try {
+            List<Map<String, Object>> data = userService.getMyPosts(loginUserId);
+            return new ApiResponse<>(true, data, "내 커뮤니티 작성 내역 조회 성공");
+        } catch (IllegalArgumentException e) {
+            return new ApiResponse<>(false, "NOT_FOUND", e.getMessage());
+        }
+    }
+
+    // 12. 내 신고 내역 조회
+    @GetMapping("/my/reports")
+    public ApiResponse<List<Map<String, Object>>> getMyEmergencyReports(@RequestHeader("Authorization") String token) {
+        Long loginUserId = extractUserId(token);
+        try {
+            List<Map<String, Object>> data = userService.getMyEmergencyReports(loginUserId);
+            return new ApiResponse<>(true, data, "내 신고 내역 조회 성공");
+        } catch (IllegalArgumentException e) {
+            return new ApiResponse<>(false, "NOT_FOUND", e.getMessage());
+        }
+    }
+
     // 공통 유틸 메서드
     private Long extractUserId(String token) {
         String jwt = token.startsWith("Bearer ") ? token.substring(7) : token;

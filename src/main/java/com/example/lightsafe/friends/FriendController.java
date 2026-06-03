@@ -1,5 +1,6 @@
 package com.example.lightsafe.friends;
 
+import com.example.lightsafe.message.MessageService;
 import com.example.lightsafe.user.JwtUtil;
 import com.example.lightsafe.user.ApiResponse;
 import lombok.RequiredArgsConstructor;
@@ -14,6 +15,7 @@ public class FriendController {
 
     private final FriendService friendService;
     private final JwtUtil jwtUtil;
+    private final MessageService messageService;
 
     // 1. 친구 목록 조회 - GET /friends
     @GetMapping("")
@@ -134,26 +136,6 @@ public class FriendController {
         }
     }
 
-    // 9. 친구 쪽지 - POST /friends/msg/{user_id}
-    @PostMapping("/msg/{user_id}")
-    public ApiResponse<Object> sendFriendMessage(
-            @PathVariable("user_id") Long targetUserId,
-            @RequestBody FriendMessageDto messageDto,
-            @RequestHeader("Authorization") String token) {
-
-        Long loginUserId = extractUserId(token);
-        try {
-            // 실제 쪽지 생성 전 친구 관계가 유효한지 검증 단계를 거칩니다.
-            friendService.validateFriendship(targetUserId, loginUserId);
-
-            // TODO: 실제 쪽지를 DB에 저장하는 로직은 Message 도메인을 만들 때 여기에 연동합니다.
-            return new ApiResponse<>(true, Collections.emptyMap(), "친구에게 쪽지 전송 성공 (내용: " + messageDto.getContent() + ")");
-        } catch (SecurityException e) {
-            return new ApiResponse<>(false, "FORBIDDEN", e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(false, "NOT_FOUND", e.getMessage());
-        }
-    }
 
     // 10. 긴급 위치 공유 허용 여부 변경 - PUT /friends/{friends_id}/emergency-allow
     @PutMapping("/{friends_id}/emergency-allow")
