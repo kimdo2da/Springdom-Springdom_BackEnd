@@ -1,5 +1,9 @@
 package com.example.lightsafe.user;
 
+import com.example.lightsafe.emergency.EmergencyReport;
+import com.example.lightsafe.emergency.EmergencyReportRepository;
+import com.example.lightsafe.post.Post;
+import com.example.lightsafe.post.PostRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -16,6 +20,8 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final PostRepository postRepository;
+    private final EmergencyReportRepository emergencyReportRepository;
 
     // ==========================================
     // [공통 기능] 타 도메인(커뮤니티 등) 연동용 메서드
@@ -202,6 +208,57 @@ public class UserService {
     public boolean getBlacklistStatus(Long loginUserId) {
         User user = getUserById(loginUserId);
         return user.isBlacklisted();
+    }
+
+    // 11. 내 커뮤니티(게시판) 작성 내역 조회
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getMyPosts(Long loginUserId) {
+        if (!userRepository.existsById(loginUserId)) {
+            throw new IllegalArgumentException("존재하지 않는 유저입니다.");
+        }
+
+        // 실제 Post DB에서 내 게시글 최신순으로 조회
+        List<Post> myPosts = postRepository.findByUser_UserIdOrderByCreatedAtDesc(loginUserId);
+
+        List<Map<String, Object>> data = new ArrayList<>();
+        for (Post post : myPosts) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("postId", post.getPostId());
+            map.put("title", post.getTitle());
+            map.put("category", post.getCategory());
+            map.put("viewCount", post.getViewCount());
+            map.put("likeCount", post.getLikeCount());
+            map.put("commentCount", post.getCommentCount()); // 댓글 수도 추가
+            map.put("createdAt", post.getCreatedAt());
+            data.add(map);
+        }
+        return data;
+    }
+
+    // 12. 내 신고 내역 조회
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getMyEmergencyReports(Long loginUserId) {
+        if (!userRepository.existsById(loginUserId)) {
+            throw new IllegalArgumentException("존재하지 않는 유저입니다.");
+        }
+
+        // 실제 EmergencyReport DB에서 내 신고 내역 최신순으로 조회
+        List<EmergencyReport> myReports = emergencyReportRepository.findByUserUserIdOrderByReportedAtDesc(loginUserId);
+
+        List<Map<String, Object>> data = new ArrayList<>();
+        for (EmergencyReport report : myReports) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("reportId", report.getReportId());
+            map.put("reportStatus", report.getReportStatus());
+            map.put("description", report.getDescription());
+
+            // 주의: 엔티티의 boolean Getter 이름(isFalseReport() 또는 getIsFalseReport())에 맞춰 수정하세요!
+            map.put("isFalseReport", report.getIsFalseReport());
+
+            map.put("reportedAt", report.getReportedAt());
+            data.add(map);
+        }
+        return data;
     }
 
     // ==========================================

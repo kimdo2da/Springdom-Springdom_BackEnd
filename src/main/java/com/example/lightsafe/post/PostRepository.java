@@ -29,4 +29,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 
     @EntityGraph(attributePaths = {"user"})
     Page<Post> findByTitleContainingIgnoreCase(String keyword, Pageable pageable);
+
+    // 특정 유저가 쓴 글을 작성일 기준 내림차순(최신순)으로 조회
+    List<Post> findByUser_UserIdOrderByCreatedAtDesc(Long userId);
 }
