@@ -114,14 +114,13 @@ public class PostController {
             @RequestParam String title,
             @RequestParam String content,
             @RequestParam(required = false) String category,
-            @RequestParam Long userId,
             @RequestPart(required = false) List<MultipartFile> files
     ) {
         if (title == null || title.isBlank() || content == null || content.isBlank()) {
             throw new IllegalArgumentException("제목과 내용은 필수입니다");
         }
 
-        PostCreateRequest request = new PostCreateRequest(title, content, category, userId);
+        PostCreateRequest request = new PostCreateRequest(title, content, category);
         Long postId = postService.createPostWithFiles(request, files);
         return ResponseEntity.ok(PostApiResponse.ok(Map.of("postId", postId)));
     }

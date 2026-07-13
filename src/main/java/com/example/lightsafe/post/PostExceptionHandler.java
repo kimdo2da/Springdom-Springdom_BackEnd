@@ -25,6 +25,22 @@ public class PostExceptionHandler {
                 .status(HttpStatus.BAD_REQUEST)
                 .body(PostApiErrorResponse.of(400, msg));
     }
+    //403 오류 권한 문제
+    @ExceptionHandler(SecurityException.class)
+    public ResponseEntity<PostApiErrorResponse>
+    handleSecurityException(SecurityException e) {
+        String message = e.getMessage() == null
+                ? "접근 권한이 없습니다."
+                : e.getMessage();
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(
+                        PostApiErrorResponse.of(
+                                403,
+                                message
+                        )
+                );
+    }
 
     // 500: 그 외 전부 서버 오류
     @ExceptionHandler(Exception.class)

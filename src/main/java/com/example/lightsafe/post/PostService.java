@@ -413,17 +413,21 @@ public class PostService {
     // =========================================================
     // 6) 게시글 CRUD (공지 isNotice는 여기서 못 건드림)
     // =========================================================
-    @Transactional
-    public Long createPost(PostCreateRequest request) {
-        User user = userRepository.findById(request.userId())
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다. id=" + request.userId()));
-
+    @Transactional public Long createPost(PostCreateRequest request) {
+        User user = userService.getCurrentUser();
+        if (user == null) {
+            throw new SecurityException("로그인이 필요합니다.");
+        }
         Post post = new Post();
         post.setTitle(request.title());
         post.setContent(request.content());
         post.setUser(user);
-        post.setCategory(request.category() != null ? request.category() : "INFO"); // ✅ 카테고리 추가
-        post.setIsNotice(false); // ✅ 일반 작성은 무조건 일반글
+        post.setCategory(
+                request.category() != null && !request.category().isBlank()
+                        ? request.category()
+                        : "INFO"
+        );
+        post.setIsNotice(false);
 
         return postRepository.save(post).getPostId();
     }
@@ -533,8 +537,14 @@ public class PostService {
     // =========================================================
     @Transactional
     public Long createNotice(AdminNoticeCreateRequest request) {
-        User admin = userRepository.findById(request.adminUserId())
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다. id=" + request.adminUserId()));
+        User admin = userService.getCurrentUser();
+
+        if(admin == null){
+            throw new SecurityException("로그인이 필요합니다.");
+        }
+        if(!"ADMIN".equalsIgnoreCase(admin.getRole())){
+            throw  new SecurityException("관리자만 공지사항을 작성할 수 있습니다.");
+        }
 
         Post post = new Post();
         post.setTitle(request.title());
