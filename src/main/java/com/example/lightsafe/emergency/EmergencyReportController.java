@@ -2,6 +2,7 @@ package com.example.lightsafe.emergency;
 
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,21 +22,36 @@ public class EmergencyReportController {
             @RequestBody @Valid EmergencyReportCreateRequest request
     ) {
         EmergencyReportResponse response = emergencyReportService.createReport(request);
-        return ResponseEntity.ok(EmergencyApiResponse.ok(response, "EMERGENCY_REPORT_CREATED"));
+
+        return ResponseEntity.ok(
+                EmergencyApiResponse.ok(
+                        response,
+                        "EMERGENCY_REPORT_CREATED"
+                )
+        );
     }
 
     @GetMapping("/{reportId}")
     public ResponseEntity<EmergencyApiResponse<EmergencyReportResponse>> getReport(
             @PathVariable Long reportId
     ) {
-        return ResponseEntity.ok(EmergencyApiResponse.ok(emergencyReportService.getReport(reportId)));
+        return ResponseEntity.ok(
+                EmergencyApiResponse.ok(
+                        emergencyReportService.getReport(reportId)
+                )
+        );
     }
 
     @GetMapping("/my")
     public ResponseEntity<EmergencyApiResponse<List<EmergencyReportResponse>>> getMyReports() {
-        return ResponseEntity.ok(EmergencyApiResponse.ok(emergencyReportService.getMyReports()));
+        return ResponseEntity.ok(
+                EmergencyApiResponse.ok(
+                        emergencyReportService.getMyReports()
+                )
+        );
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{reportId}/false-report")
     public ResponseEntity<EmergencyApiResponse<EmergencyReportResponse>> markFalseReport(
             @PathVariable Long reportId
@@ -48,6 +64,7 @@ public class EmergencyReportController {
         );
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{reportId}/status")
     public ResponseEntity<EmergencyApiResponse<EmergencyReportResponse>> updateReportStatus(
             @PathVariable Long reportId,

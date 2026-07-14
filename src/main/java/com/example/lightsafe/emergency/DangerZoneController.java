@@ -2,6 +2,7 @@ package com.example.lightsafe.emergency;
 
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -23,16 +24,25 @@ public class DangerZoneController {
 
     @GetMapping
     public ResponseEntity<EmergencyApiResponse<List<DangerZoneResponse>>> getDangerZones() {
-        return ResponseEntity.ok(EmergencyApiResponse.ok(dangerZoneService.getDangerZones()));
+        return ResponseEntity.ok(
+                EmergencyApiResponse.ok(
+                        dangerZoneService.getDangerZones()
+                )
+        );
     }
 
     @GetMapping("/{dangerZoneId}")
     public ResponseEntity<EmergencyApiResponse<DangerZoneDetailResponse>> getDangerZoneDetail(
             @PathVariable Long dangerZoneId
     ) {
-        return ResponseEntity.ok(EmergencyApiResponse.ok(dangerZoneService.getDangerZoneDetail(dangerZoneId)));
+        return ResponseEntity.ok(
+                EmergencyApiResponse.ok(
+                        dangerZoneService.getDangerZoneDetail(dangerZoneId)
+                )
+        );
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{dangerZoneId}/level")
     public ResponseEntity<EmergencyApiResponse<DangerZoneResponse>> updateDangerLevel(
             @PathVariable Long dangerZoneId,
@@ -46,6 +56,7 @@ public class DangerZoneController {
         );
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{dangerZoneId}/deactivate")
     public ResponseEntity<EmergencyApiResponse<DangerZoneResponse>> deactivateDangerZone(
             @PathVariable Long dangerZoneId
@@ -63,7 +74,9 @@ public class DangerZoneController {
             @PathVariable Long dangerZoneId
     ) {
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(emergencyReportService.getReportsByDangerZone(dangerZoneId))
+                EmergencyApiResponse.ok(
+                        emergencyReportService.getReportsByDangerZone(dangerZoneId)
+                )
         );
     }
 }
