@@ -6,11 +6,13 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class EmergencyReportService2 {
@@ -77,7 +79,30 @@ public class EmergencyReportService2 {
     @Transactional(readOnly = true)
     public EmergencyReportResponse getReport(Long reportId) {
         EmergencyReport report = emergencyReportRepository.findById(reportId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 신고입니다. id=" + reportId));
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "존재하지 않는 신고입니다. id=" + reportId
+                        )
+                );
+
+        User currentUser = getCurrentUser();
+
+        if (currentUser == null) {
+            throw new AccessDeniedException("로그인이 필요합니다.");
+        }
+
+        boolean isReporter = Objects.equals(
+                report.getUser().getUserId(),
+                currentUser.getUserId()
+        );
+
+        boolean isAdmin = "ADMIN".equalsIgnoreCase(currentUser.getRole());
+
+        if (!isReporter && !isAdmin) {
+            throw new AccessDeniedException(
+                    "신고자 본인 또는 관리자만 신고 상세정보를 조회할 수 있습니다."
+            );
+        }
 
         return EmergencyReportResponse.from(report);
     }

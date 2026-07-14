@@ -10,36 +10,31 @@ import java.util.List;
 public class DangerZoneService {
 
     private final DangerZoneRepository dangerZoneRepository;
-    private final EmergencyReportRepository emergencyReportRepository;
 
     public DangerZoneService(
-            DangerZoneRepository dangerZoneRepository,
-            EmergencyReportRepository emergencyReportRepository
+            DangerZoneRepository dangerZoneRepository
     ) {
         this.dangerZoneRepository = dangerZoneRepository;
-        this.emergencyReportRepository = emergencyReportRepository;
     }
 
     @Transactional(readOnly = true)
-    public List<DangerZoneResponse> getDangerZones() {
+    public List<PublicDangerZoneResponse> getDangerZones() {
         return dangerZoneRepository.findByIsActiveTrueOrderByCreatedAtDesc()
                 .stream()
-                .map(DangerZoneResponse::from)
+                .map(PublicDangerZoneResponse::from)
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public DangerZoneDetailResponse getDangerZoneDetail(Long dangerZoneId) {
+    public PublicDangerZoneResponse getDangerZoneDetail(Long dangerZoneId) {
         DangerZone dangerZone = dangerZoneRepository.findById(dangerZoneId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 위험구역입니다. id=" + dangerZoneId));
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "존재하지 않는 위험구역입니다. id=" + dangerZoneId
+                        )
+                );
 
-        List<EmergencyReportResponse> reports = emergencyReportRepository
-                .findByDangerZoneDangerZoneIdOrderByReportedAtDesc(dangerZoneId)
-                .stream()
-                .map(EmergencyReportResponse::from)
-                .toList();
-
-        return DangerZoneDetailResponse.of(dangerZone, reports);
+        return PublicDangerZoneResponse.from(dangerZone);
     }
 
     @Transactional

@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+
 import java.util.List;
 
 @RestController
@@ -23,7 +24,7 @@ public class DangerZoneController {
     }
 
     @GetMapping
-    public ResponseEntity<EmergencyApiResponse<List<DangerZoneResponse>>> getDangerZones() {
+    public ResponseEntity<EmergencyApiResponse<List<PublicDangerZoneResponse>>> getDangerZones() {
         return ResponseEntity.ok(
                 EmergencyApiResponse.ok(
                         dangerZoneService.getDangerZones()
@@ -32,7 +33,7 @@ public class DangerZoneController {
     }
 
     @GetMapping("/{dangerZoneId}")
-    public ResponseEntity<EmergencyApiResponse<DangerZoneDetailResponse>> getDangerZoneDetail(
+    public ResponseEntity<EmergencyApiResponse<PublicDangerZoneResponse>> getDangerZoneDetail(
             @PathVariable Long dangerZoneId
     ) {
         return ResponseEntity.ok(
@@ -69,6 +70,7 @@ public class DangerZoneController {
         );
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/{dangerZoneId}/reports")
     public ResponseEntity<EmergencyApiResponse<List<EmergencyReportResponse>>> getReportsByDangerZone(
             @PathVariable Long dangerZoneId
