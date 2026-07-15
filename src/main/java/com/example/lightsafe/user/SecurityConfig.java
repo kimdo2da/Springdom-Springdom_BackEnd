@@ -32,9 +32,14 @@ public class SecurityConfig {
                                         "/map.html",
                                         "/cctvs",
                                         "/cctvs/**",
+                                        "/street-lamps",
+                                        "/street-lamps/**",
+                                        "/safe-places",
+                                        "/safe-places/**",
                                         "/routes"
                                         // 🔥 이 줄을 꼭 추가해 주세요! (뒤에 뭐가 오든 다 허용)
                                 ).permitAll()
+
 // ... 뒷부분 생략 ...
                         .anyRequest().authenticated()
                 )
