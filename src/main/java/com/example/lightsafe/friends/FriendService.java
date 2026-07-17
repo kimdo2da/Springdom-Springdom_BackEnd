@@ -36,7 +36,17 @@ public class FriendService {
             map.put("friendsId", f.getFriendsId());
             map.put("friendUserId", f.getFriendUser().getUserId());
             map.put("friendNickname", f.getFriendUser().getNickname());
-            map.put("isEmergencyAllowed", f.isEmergencyAllowed());
+            // 내가 상대방에게 내 긴급 위치를 공유하는지
+            map.put(
+                    "isEmergencyAllowed",
+                    f.isUserEmergencyAllowed()
+            );
+
+            // 상대방이 나에게 자기 긴급 위치를 공유하는지
+            map.put(
+                    "isEmergencyAllowedByFriend",
+                    f.isFriendUserEmergencyAllowed()
+            );
             map.put("becameFriendAt", f.getCreatedAt());
             data.add(map);
         }
@@ -47,7 +57,17 @@ public class FriendService {
             map.put("friendsId", f.getFriendsId());
             map.put("friendUserId", f.getUser().getUserId());
             map.put("friendNickname", f.getUser().getNickname());
-            map.put("isEmergencyAllowed", f.isEmergencyAllowed());
+            // 내가 상대방에게 내 긴급 위치를 공유하는지
+            map.put(
+                    "isEmergencyAllowed",
+                    f.isFriendUserEmergencyAllowed()
+            );
+
+            // 상대방이 나에게 자기 긴급 위치를 공유하는지
+            map.put(
+                    "isEmergencyAllowedByFriend",
+                    f.isUserEmergencyAllowed()
+            );
             map.put("becameFriendAt", f.getCreatedAt());
             data.add(map);
         }
@@ -80,7 +100,8 @@ public class FriendService {
                 .user(sender)
                 .friendUser(receiver)
                 .status(FriendStatus.PENDING)
-                .isEmergencyAllowed(false)
+                .userEmergencyAllowed(false)
+                .friendUserEmergencyAllowed(false)
                 .build();
 
         friendRepository.save(friendRequest);
@@ -236,29 +257,99 @@ public class FriendService {
     }
 
     /**
-     * 10. 긴급 위치 공유 허용 여부 토글 (Toggle)
-     * 친구 관계자 중 한 명인지 검증 후, 현재 설정을 반대로 반전시키고 바뀐 설정을 반환합니다.
-     * @return 변경 후의 위치 공유 상태 메시지 ("위치 공유 허용" 또는 "위치 공유 차단")
+     * 로그인 사용자가 특정 친구에게
+     * 자기 긴급 위치를 공유할지 명시적으로 설정합니다.
+     * <p>
+     * 각 사용자는 자기 방향의 설정만 변경할 수 있습니다.
      */
-    public String toggleEmergencyAllow(Long friendsId, Long loginUserId) {
+    public Map<String, Object> setEmergencyAllow(
+            Long friendsId,
+            Long loginUserId,
+            Boolean isEmergencyAllowed
+    ) {
+        if (isEmergencyAllowed == null) {
+            throw new IllegalArgumentException(
+                    "긴급 위치 공유 설정값은 필수입니다."
+            );
+        }
         Friend friendRelation = friendRepository.findById(friendsId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 친구 관계입니다."));
-
-        boolean isMyRelation = friendRelation.getUser().getUserId().equals(loginUserId) ||
-                friendRelation.getFriendUser().getUserId().equals(loginUserId);
-
-        if (!isMyRelation) {
-            throw new SecurityException("본인의 친구 관계 설정만 변경할 수 있습니다.");
-        }
-
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "존재하지 않는 친구 관계입니다."
+                        )
+                );
         if (friendRelation.getStatus() != FriendStatus.ACCEPTED) {
-            throw new IllegalArgumentException("수락된 친구 상태에서만 설정을 변경할 수 있습니다.");
+            throw new IllegalArgumentException(
+                    "수락된 친구 관계에서만 설정을 변경할 수 있습니다."
+            );
         }
+        Long friendUserId;
+        boolean allowedByFriend;
+        /*
+         * 로그인 사용자가 친구 요청을 보냈던 user 쪽이라면
+         * userEmergencyAllowed만 변경합니다.
+         */
+        if (friendRelation.getUser()
+                .getUserId()
+                .equals(loginUserId)) {
 
-        // 토글: true -> false, false -> true 반전
-        friendRelation.setEmergencyAllowed(!friendRelation.isEmergencyAllowed());
+            friendRelation.setUserEmergencyAllowed(
+                    isEmergencyAllowed
+            );
+
+            friendUserId = friendRelation
+                    .getFriendUser()
+                    .getUserId();
+
+            allowedByFriend =
+                    friendRelation.isFriendUserEmergencyAllowed();
+
+            /*
+             * 로그인 사용자가 친구 요청을 받았던 friendUser 쪽이라면
+             * friendUserEmergencyAllowed만 변경합니다.
+             */
+        } else if (friendRelation.getFriendUser()
+                .getUserId()
+                .equals(loginUserId)) {
+
+            friendRelation.setFriendUserEmergencyAllowed(
+                    isEmergencyAllowed
+            );
+
+            friendUserId = friendRelation
+                    .getUser()
+                    .getUserId();
+
+            allowedByFriend =
+                    friendRelation.isUserEmergencyAllowed();
+
+        } else {
+            throw new SecurityException(
+                    "본인의 친구 관계 설정만 변경할 수 있습니다."
+            );
+        }
         friendRepository.save(friendRelation);
+        Map<String, Object> result = new HashMap<>();
 
-        return friendRelation.isEmergencyAllowed() ? "위치 공유 허용" : "위치 공유 차단";
+        result.put(
+                "friendsId",
+                friendRelation.getFriendsId()
+        );
+        result.put(
+                "friendUserId",
+                friendUserId
+        );
+        // 내가 상대방에게 내 위치를 공유하는 설정
+        result.put(
+                "isEmergencyAllowed",
+                isEmergencyAllowed
+        );
+
+        // 상대방이 나에게 자기 위치를 공유하는 설정
+        result.put(
+                "isEmergencyAllowedByFriend",
+                allowedByFriend
+        );
+        return result;
     }
 }

@@ -5,6 +5,7 @@ import com.example.lightsafe.user.JwtUtil;
 import com.example.lightsafe.user.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
 
 import java.util.*;
 
@@ -138,25 +139,47 @@ public class FriendController {
 
 
     // 10. 긴급 위치 공유 허용 여부 변경 - PUT /friends/{friends_id}/emergency-allow
+// 긴급 위치 공유 설정
+// PUT /friends/{friends_id}/emergency-allow
     @PutMapping("/{friends_id}/emergency-allow")
-    public ApiResponse<Object> toggleEmergencyAllow(
+    public ApiResponse<Object> setEmergencyAllow(
             @PathVariable("friends_id") Long friendsId,
-            @RequestHeader("Authorization") String token) {
-
+            @Valid @RequestBody EmergencyAllowUpdateRequest request,
+            @RequestHeader("Authorization") String token
+    ) {
         Long loginUserId = extractUserId(token);
         try {
-            String statusMsg = friendService.toggleEmergencyAllow(friendsId, loginUserId);
-            return new ApiResponse<>(true, Collections.emptyMap(), "긴급 설정 변경 성공 (" + statusMsg + ")");
+            Map<String, Object> data =
+                    friendService.setEmergencyAllow(
+                            friendsId,
+                            loginUserId,
+                            request.getIsEmergencyAllowed()
+                    );
+            return new ApiResponse<>(
+                    true,
+                    data,
+                    "긴급 위치 공유 설정 변경 성공"
+            );
         } catch (SecurityException e) {
-            return new ApiResponse<>(false, "FORBIDDEN", e.getMessage());
+            return new ApiResponse<>(
+                    false,
+                    "FORBIDDEN",
+                    e.getMessage()
+            );
         } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(false, "BAD_REQUEST", e.getMessage());
+            return new ApiResponse<>(
+                    false,
+                    "BAD_REQUEST",
+                    e.getMessage()
+            );
         }
     }
-
-    // 공통 유틸 메서드: 토큰에서 회원 ID 추출
+    // 공통 유틸 메서드: Authorization 헤더에서 사용자 ID 추출
     private Long extractUserId(String token) {
-        String jwt = token.startsWith("Bearer ") ? token.substring(7) : token;
+        String jwt = token.startsWith("Bearer ")
+                ? token.substring(7)
+                : token;
+
         return jwtUtil.getUserIdFromToken(jwt);
     }
 }
