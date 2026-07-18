@@ -430,4 +430,81 @@ public class FriendService {
 
         return false;
     }
+    /**
+     * 긴급신고 발생 시 알림을 받을 친구 목록을 반환합니다.
+     *
+     * reporter가 상대방에게 자기 위치 공유를 허용한
+     * ACCEPTED 친구만 반환합니다.
+     */
+    @Transactional(readOnly = true)
+    public List<User> getEmergencyNotificationRecipients(
+            Long reporterUserId
+    ) {
+        User reporter = userRepository
+                .findById(reporterUserId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "존재하지 않는 신고자입니다."
+                        )
+                );
+
+        /*
+         * 같은 사용자가 중복으로 추가되지 않도록
+         * userId를 Key로 사용합니다.
+         */
+        Map<Long, User> recipients =
+                new LinkedHashMap<>();
+
+        /*
+         * reporter가 friends.user 쪽인 관계
+         *
+         * reporter의 공유 설정:
+         * userEmergencyAllowed
+         */
+        List<Friend> sentSideRelations =
+                friendRepository.findByUserAndStatus(
+                        reporter,
+                        FriendStatus.ACCEPTED
+                );
+
+        for (Friend relation : sentSideRelations) {
+            if (relation.isUserEmergencyAllowed()) {
+                User recipient =
+                        relation.getFriendUser();
+
+                recipients.put(
+                        recipient.getUserId(),
+                        recipient
+                );
+            }
+        }
+
+        /*
+         * reporter가 friends.friendUser 쪽인 관계
+         *
+         * reporter의 공유 설정:
+         * friendUserEmergencyAllowed
+         */
+        List<Friend> receivedSideRelations =
+                friendRepository.findByFriendUserAndStatus(
+                        reporter,
+                        FriendStatus.ACCEPTED
+                );
+
+        for (Friend relation : receivedSideRelations) {
+            if (relation.isFriendUserEmergencyAllowed()) {
+                User recipient =
+                        relation.getUser();
+
+                recipients.put(
+                        recipient.getUserId(),
+                        recipient
+                );
+            }
+        }
+
+        return new ArrayList<>(
+                recipients.values()
+        );
+    }
 }

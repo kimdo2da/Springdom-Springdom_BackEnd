@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.access.AccessDeniedException;
 import com.example.lightsafe.friends.FriendService;
+import com.example.lightsafe.notification.NotificationService;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -25,19 +26,22 @@ public class EmergencyReportService2 {
     private final CctvRepository cctvRepository;
     private final UserRepository userRepository;
     private final FriendService friendService;
+    private final NotificationService notificationService;
 
     public EmergencyReportService2(
             EmergencyReportRepository emergencyReportRepository,
             DangerZoneRepository dangerZoneRepository,
             CctvRepository cctvRepository,
             UserRepository userRepository,
-            FriendService friendService
+            FriendService friendService,
+            NotificationService notificationService
     ) {
         this.emergencyReportRepository = emergencyReportRepository;
         this.dangerZoneRepository = dangerZoneRepository;
         this.cctvRepository = cctvRepository;
         this.userRepository = userRepository;
         this.friendService = friendService;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -73,9 +77,29 @@ public class EmergencyReportService2 {
         report.setDangerZone(dangerZone);
         report.setNearestCctv(nearestCctv);
 
-        EmergencyReport saved = emergencyReportRepository.save(report);
+        EmergencyReport saved =
+                emergencyReportRepository.save(report);
 
         updateDangerZoneLevelAndCount(dangerZone);
+
+        /*
+         * 신고자가 자기 위치 공유를 허용한
+         * ACCEPTED 친구 목록을 조회합니다.
+         */
+        List<User> notificationRecipients =
+                friendService
+                        .getEmergencyNotificationRecipients(
+                                user.getUserId()
+                        );
+
+        /*
+         * 허용된 친구에게 긴급신고 알림을 저장합니다.
+         */
+        notificationService
+                .createEmergencyReportNotifications(
+                        saved,
+                        notificationRecipients
+                );
 
         return EmergencyReportResponse.from(saved);
     }
