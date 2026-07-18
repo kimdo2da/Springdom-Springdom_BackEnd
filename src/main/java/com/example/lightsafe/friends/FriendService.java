@@ -351,5 +351,83 @@ public class FriendService {
                 allowedByFriend
         );
         return result;
+
+    }
+    /**
+     * reporter 사용자가 viewer 사용자에게
+     * 자기 긴급 위치 공유를 허용했는지 확인합니다.
+     *
+     * 친구 관계가 저장된 방향에 따라
+     * userEmergencyAllowed 또는
+     * friendUserEmergencyAllowed를 구분해서 검사합니다.
+     */
+    @Transactional(readOnly = true)
+    public boolean canAccessEmergencyLocation(
+            Long reporterUserId,
+            Long viewerUserId
+    ) {
+        if (reporterUserId == null || viewerUserId == null) {
+            return false;
+        }
+
+        // 본인은 자신의 위치를 조회할 수 있음
+        if (Objects.equals(reporterUserId, viewerUserId)) {
+            return true;
+        }
+
+        User reporter = userRepository.findById(reporterUserId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "존재하지 않는 신고자입니다."
+                        )
+                );
+
+        User viewer = userRepository.findById(viewerUserId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "존재하지 않는 조회 사용자입니다."
+                        )
+                );
+
+        /*
+         * 관계가 reporter → viewer 방향으로 저장된 경우
+         *
+         * reporter가 user 쪽이므로
+         * reporter의 공유 설정은 userEmergencyAllowed입니다.
+         */
+        Optional<Friend> reporterToViewer =
+                friendRepository.findByUserAndFriendUser(
+                        reporter,
+                        viewer
+                );
+
+        if (reporterToViewer.isPresent()) {
+            Friend relation = reporterToViewer.get();
+
+            return relation.getStatus() == FriendStatus.ACCEPTED
+                    && relation.isUserEmergencyAllowed();
+        }
+
+        /*
+         * 관계가 viewer → reporter 방향으로 저장된 경우
+         *
+         * reporter가 friendUser 쪽이므로
+         * reporter의 공유 설정은
+         * friendUserEmergencyAllowed입니다.
+         */
+        Optional<Friend> viewerToReporter =
+                friendRepository.findByUserAndFriendUser(
+                        viewer,
+                        reporter
+                );
+
+        if (viewerToReporter.isPresent()) {
+            Friend relation = viewerToReporter.get();
+
+            return relation.getStatus() == FriendStatus.ACCEPTED
+                    && relation.isFriendUserEmergencyAllowed();
+        }
+
+        return false;
     }
 }

@@ -7,6 +7,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.access.AccessDeniedException;
+import com.example.lightsafe.friends.FriendService;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -23,17 +24,20 @@ public class EmergencyReportService2 {
     private final DangerZoneRepository dangerZoneRepository;
     private final CctvRepository cctvRepository;
     private final UserRepository userRepository;
+    private final FriendService friendService;
 
     public EmergencyReportService2(
             EmergencyReportRepository emergencyReportRepository,
             DangerZoneRepository dangerZoneRepository,
             CctvRepository cctvRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            FriendService friendService
     ) {
         this.emergencyReportRepository = emergencyReportRepository;
         this.dangerZoneRepository = dangerZoneRepository;
         this.cctvRepository = cctvRepository;
         this.userRepository = userRepository;
+        this.friendService = friendService;
     }
 
     @Transactional
@@ -105,6 +109,62 @@ public class EmergencyReportService2 {
         }
 
         return EmergencyReportResponse.from(report);
+    }
+    /**
+     * 위치 공유가 허용된 친구에게
+     * 정확한 긴급신고 위치를 반환합니다.
+     *
+     * 신고자 본인과 관리자도 접근할 수 있지만,
+     * 친구용으로 제한된 응답 DTO를 반환합니다.
+     */
+    @Transactional(readOnly = true)
+    public SharedEmergencyLocationResponse getSharedLocation(
+            Long reportId
+    ) {
+        EmergencyReport report = emergencyReportRepository
+                .findById(reportId)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "존재하지 않는 신고입니다. id=" + reportId
+                        )
+                );
+
+        User currentUser = getCurrentUser();
+
+        if (currentUser == null) {
+            throw new AccessDeniedException(
+                    "로그인이 필요합니다."
+            );
+        }
+
+        Long reporterUserId =
+                report.getUser().getUserId();
+
+        Long viewerUserId =
+                currentUser.getUserId();
+
+        boolean isReporter = Objects.equals(
+                reporterUserId,
+                viewerUserId
+        );
+
+        boolean isAdmin = "ADMIN".equalsIgnoreCase(
+                currentUser.getRole()
+        );
+
+        boolean isAllowedFriend =
+                friendService.canAccessEmergencyLocation(
+                        reporterUserId,
+                        viewerUserId
+                );
+
+        if (!isReporter && !isAdmin && !isAllowedFriend) {
+            throw new AccessDeniedException(
+                    "위치 공유가 허용된 친구만 정확한 위치를 조회할 수 있습니다."
+            );
+        }
+
+        return SharedEmergencyLocationResponse.from(report);
     }
 
     @Transactional(readOnly = true)

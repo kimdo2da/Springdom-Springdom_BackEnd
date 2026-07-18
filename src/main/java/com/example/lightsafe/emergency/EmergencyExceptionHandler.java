@@ -13,12 +13,25 @@ public class EmergencyExceptionHandler {
     public ResponseEntity<EmergencyApiErrorResponse> handleAccessDenied(
             AccessDeniedException e
     ) {
+        String message = e.getMessage();
+
+        /*
+         * @PreAuthorize 권한 거절은 보통
+         * "Access Denied" 메시지를 사용합니다.
+         */
+        if (message == null
+                || message.isBlank()
+                || "Access Denied".equalsIgnoreCase(message)) {
+
+            message = "관리자 권한이 필요합니다.";
+        }
+
         return ResponseEntity
                 .status(HttpStatus.FORBIDDEN)
                 .body(
                         EmergencyApiErrorResponse.of(
                                 403,
-                                "관리자 권한이 필요합니다."
+                                message
                         )
                 );
     }

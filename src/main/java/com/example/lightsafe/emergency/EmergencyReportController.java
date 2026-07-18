@@ -77,4 +77,18 @@ public class EmergencyReportController {
                 )
         );
     }
+    // 위치 공유가 허용된 친구용 정확한 긴급 위치 조회
+    @GetMapping("/{reportId}/shared-location")
+    public ResponseEntity<
+            EmergencyApiResponse<SharedEmergencyLocationResponse>
+            > getSharedLocation(
+            @PathVariable Long reportId
+    ) {
+        return ResponseEntity.ok(
+                EmergencyApiResponse.ok(
+                        emergencyReportService.getSharedLocation(reportId),
+                        "SHARED_EMERGENCY_LOCATION"
+                )
+        );
+    }
 }
