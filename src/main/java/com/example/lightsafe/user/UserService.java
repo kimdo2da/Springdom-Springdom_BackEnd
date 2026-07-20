@@ -10,6 +10,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import com.example.lightsafe.common.exception.BadRequestException;
+import com.example.lightsafe.common.exception.ConflictException;
+import com.example.lightsafe.common.exception.ForbiddenException;
+import com.example.lightsafe.common.exception.NotFoundException;
+import com.example.lightsafe.common.exception.UnauthorizedException;
+
+
 import java.util.*;
 
 @Service
@@ -29,7 +36,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public User getUserById(Long userId) {
         return userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 유저입니다. 유저 ID: " + userId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 유저입니다. 유저 ID: " + userId));
     }
 
     @Transactional(readOnly = true)
@@ -44,7 +51,7 @@ public class UserService {
     // 1. 회원가입
     public Long register(UserRegisterRequest request) {
         if (userRepository.findByUsername(request.getUsername()).isPresent()) {
-            throw new IllegalStateException("이미 존재하는 아이디입니다.");
+            throw new ConflictException("이미 존재하는 아이디입니다.");
         }
 
         String encodedPassword = passwordEncoder.encode(request.getPassword());
@@ -66,10 +73,10 @@ public class UserService {
     @Transactional(readOnly = true)
     public Map<String, Object> login(UserLoginRequest request) {
         User user = userRepository.findByUsername(request.getUsernameOrEmail())
-                .orElseThrow(() -> new SecurityException("아이디 또는 비밀번호가 일치하지 않습니다."));
+                .orElseThrow(() -> new UnauthorizedException("아이디 또는 비밀번호가 일치하지 않습니다."));
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new SecurityException("아이디 또는 비밀번호가 일치하지 않습니다.");
+            throw new UnauthorizedException("아이디 또는 비밀번호가 일치하지 않습니다.");
         }
 
         String realToken = jwtUtil.generateToken(user.getUserId(), user.getRole());
@@ -87,7 +94,7 @@ public class UserService {
         User loginUser = getUserById(loginUserId);
 
         if (!loginUserId.equals(targetUserId) && !"ADMIN".equals(loginUser.getRole())) {
-            throw new SecurityException("타인의 프로필을 조회할 권한이 없습니다.");
+            throw new ForbiddenException("타인의 프로필을 조회할 권한이 없습니다.");
         }
 
         User targetUser = getUserById(targetUserId);
@@ -110,7 +117,7 @@ public class UserService {
         User loginUser = getUserById(loginUserId);
 
         if (!loginUserId.equals(targetUserId) && !"ADMIN".equals(loginUser.getRole())) {
-            throw new SecurityException("본인 또는 관리자만 수정할 수 있습니다.");
+            throw new ForbiddenException("본인 또는 관리자만 수정할 수 있습니다.");
         }
 
         User user = getUserById(targetUserId);
@@ -125,11 +132,11 @@ public class UserService {
         if (request.getEmail() != null && !request.getEmail().isBlank()) {
             String emailRegex = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
             if (!request.getEmail().matches(emailRegex)) {
-                throw new IllegalArgumentException("올바른 이메일 형식이 아닙니다.");
+                throw new BadRequestException("올바른 이메일 형식이 아닙니다.");
             }
             if (!user.getEmail().equals(request.getEmail())) {
                 if (userRepository.findByEmail(request.getEmail()).isPresent()) {
-                    throw new IllegalStateException("이미 사용 중인 이메일입니다.");
+                    throw new ConflictException("이미 사용 중인 이메일입니다.");
                 }
                 user.setEmail(request.getEmail());
             }
@@ -138,7 +145,7 @@ public class UserService {
         if (request.getPhone() != null && !request.getPhone().isBlank()) {
             String phoneRegex = "^010-\\d{4}-\\d{4}$";
             if (!request.getPhone().matches(phoneRegex)) {
-                throw new IllegalArgumentException("전화번호 형식이 올바르지 않습니다. (예: 010-1234-5678)");
+                throw new BadRequestException("전화번호 형식이 올바르지 않습니다. (예: 010-1234-5678)");
             }
             user.setPhone(request.getPhone());
         }
@@ -158,11 +165,11 @@ public class UserService {
         User loginUser = getUserById(loginUserId);
 
         if (!loginUserId.equals(targetUserId) && !"ADMIN".equals(loginUser.getRole())) {
-            throw new SecurityException("본인 또는 관리자만 탈퇴 처리할 수 있습니다.");
+            throw new ForbiddenException("본인 또는 관리자만 탈퇴 처리할 수 있습니다.");
         }
 
         if (!userRepository.existsById(targetUserId)) {
-            throw new IllegalArgumentException("존재하지 않는 유저입니다.");
+            throw new NotFoundException("존재하지 않는 유저입니다.");
         }
 
         userRepository.deleteById(targetUserId);
@@ -174,7 +181,7 @@ public class UserService {
         User loginUser = getUserById(loginUserId);
 
         if (!"ADMIN".equals(loginUser.getRole())) {
-            throw new SecurityException("관리자 권한이 필요합니다.");
+            throw new ForbiddenException("관리자 권한이 필요합니다.");
         }
 
         List<User> users = userRepository.findAll();
@@ -214,7 +221,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getMyPosts(Long loginUserId) {
         if (!userRepository.existsById(loginUserId)) {
-            throw new IllegalArgumentException("존재하지 않는 유저입니다.");
+            throw new NotFoundException("존재하지 않는 유저입니다.");
         }
 
         // 실제 Post DB에서 내 게시글 최신순으로 조회
@@ -239,7 +246,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getMyEmergencyReports(Long loginUserId) {
         if (!userRepository.existsById(loginUserId)) {
-            throw new IllegalArgumentException("존재하지 않는 유저입니다.");
+            throw new NotFoundException("존재하지 않는 유저입니다.");
         }
 
         // 실제 EmergencyReport DB에서 내 신고 내역 최신순으로 조회
@@ -280,7 +287,11 @@ public class UserService {
 
         // 4. DB에서 해당 유저 엔티티를 찾아서 반환합니다.
         return userRepository.findById(loginUserId)
-                .orElseThrow(() -> new IllegalArgumentException("토큰에 해당하는 유저를 찾을 수 없습니다."));
+                .orElseThrow(() ->
+                        new UnauthorizedException(
+                                "토큰에 해당하는 유저를 찾을 수 없습니다."
+                        )
+                );
     }
 
     // ==========================================
@@ -289,7 +300,7 @@ public class UserService {
     @Transactional
     public void addFalseReportPenalty(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다."));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 사용자입니다."));
 
         // 허위신고 횟수 1 증가
         int nextCount = user.getFalseReportCount() + 1;

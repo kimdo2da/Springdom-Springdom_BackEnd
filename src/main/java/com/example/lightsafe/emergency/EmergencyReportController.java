@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import com.example.lightsafe.common.response.ApiResponse;
 
 import java.util.List;
 
@@ -18,13 +19,13 @@ public class EmergencyReportController {
     }
 
     @PostMapping
-    public ResponseEntity<EmergencyApiResponse<EmergencyReportResponse>> createReport(
+    public ResponseEntity<ApiResponse<EmergencyReportResponse>> createReport(
             @RequestBody @Valid EmergencyReportCreateRequest request
     ) {
         EmergencyReportResponse response = emergencyReportService.createReport(request);
 
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(
+                ApiResponse.ok(
                         response,
                         "EMERGENCY_REPORT_CREATED"
                 )
@@ -32,20 +33,20 @@ public class EmergencyReportController {
     }
 
     @GetMapping("/{reportId}")
-    public ResponseEntity<EmergencyApiResponse<EmergencyReportResponse>> getReport(
+    public ResponseEntity<ApiResponse<EmergencyReportResponse>> getReport(
             @PathVariable Long reportId
     ) {
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(
+                ApiResponse.ok(
                         emergencyReportService.getReport(reportId)
                 )
         );
     }
 
     @GetMapping("/my")
-    public ResponseEntity<EmergencyApiResponse<List<EmergencyReportResponse>>> getMyReports() {
+    public ResponseEntity<ApiResponse<List<EmergencyReportResponse>>> getMyReports() {
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(
+                ApiResponse.ok(
                         emergencyReportService.getMyReports()
                 )
         );
@@ -53,11 +54,11 @@ public class EmergencyReportController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{reportId}/false-report")
-    public ResponseEntity<EmergencyApiResponse<EmergencyReportResponse>> markFalseReport(
+    public ResponseEntity<ApiResponse<EmergencyReportResponse>> markFalseReport(
             @PathVariable Long reportId
     ) {
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(
+                ApiResponse.ok(
                         emergencyReportService.markFalseReport(reportId),
                         "FALSE_REPORT_UPDATED"
                 )
@@ -66,12 +67,12 @@ public class EmergencyReportController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{reportId}/status")
-    public ResponseEntity<EmergencyApiResponse<EmergencyReportResponse>> updateReportStatus(
+    public ResponseEntity<ApiResponse<EmergencyReportResponse>> updateReportStatus(
             @PathVariable Long reportId,
             @RequestBody @Valid EmergencyReportStatusUpdateRequest request
     ) {
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(
+                ApiResponse.ok(
                         emergencyReportService.updateReportStatus(reportId, request),
                         "REPORT_STATUS_UPDATED"
                 )
@@ -80,12 +81,12 @@ public class EmergencyReportController {
     // 위치 공유가 허용된 친구용 정확한 긴급 위치 조회
     @GetMapping("/{reportId}/shared-location")
     public ResponseEntity<
-            EmergencyApiResponse<SharedEmergencyLocationResponse>
+            ApiResponse<SharedEmergencyLocationResponse>
             > getSharedLocation(
             @PathVariable Long reportId
     ) {
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(
+                ApiResponse.ok(
                         emergencyReportService.getSharedLocation(reportId),
                         "SHARED_EMERGENCY_LOCATION"
                 )

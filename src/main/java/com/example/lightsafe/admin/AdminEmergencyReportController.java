@@ -1,9 +1,8 @@
 package com.example.lightsafe.admin;
 
-import com.example.lightsafe.user.ApiResponse;
+import com.example.lightsafe.common.response.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -60,38 +59,23 @@ public class AdminEmergencyReportController {
             )
             LocalDateTime endDate
     ) {
-        try {
-            AdminEmergencyReportPageResponse data =
-                    adminEmergencyReportService
-                            .getAllReports(
-                                    page,
-                                    size,
-                                    status,
-                                    isFalseReport,
-                                    dangerZoneId,
-                                    reporterId,
-                                    startDate,
-                                    endDate
-                            );
+        AdminEmergencyReportPageResponse data =
+                adminEmergencyReportService.getAllReports(
+                        page,
+                        size,
+                        status,
+                        isFalseReport,
+                        dangerZoneId,
+                        reporterId,
+                        startDate,
+                        endDate
+                );
 
-            return ResponseEntity.ok(
-                    new ApiResponse<>(
-                            true,
-                            data,
-                            "관리자 전체 긴급신고 이력 조회 성공"
-                    )
-            );
-
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity
-                    .status(HttpStatus.BAD_REQUEST)
-                    .body(
-                            new ApiResponse<>(
-                                    false,
-                                    "BAD_REQUEST",
-                                    e.getMessage()
-                            )
-                    );
-        }
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        data,
+                        "관리자 전체 긴급신고 이력 조회 성공"
+                )
+        );
     }
 }

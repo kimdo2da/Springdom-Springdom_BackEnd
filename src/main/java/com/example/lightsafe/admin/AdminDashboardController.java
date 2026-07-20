@@ -1,12 +1,13 @@
 package com.example.lightsafe.admin;
 
-import com.example.lightsafe.user.ApiResponse;
+import com.example.lightsafe.common.response.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
 
 @RestController
 @RequiredArgsConstructor
@@ -26,8 +27,7 @@ public class AdminDashboardController {
                 adminDashboardService.getSummary();
 
         return ResponseEntity.ok(
-                new ApiResponse<>(
-                        true,
+                ApiResponse.ok(
                         data,
                         "관리자 대시보드 통계 조회 성공"
                 )

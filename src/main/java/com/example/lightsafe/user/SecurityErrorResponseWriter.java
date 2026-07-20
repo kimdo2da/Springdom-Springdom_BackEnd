@@ -1,10 +1,15 @@
 package com.example.lightsafe.user;
 
+import com.example.lightsafe.common.response.ApiResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
 
 public final class SecurityErrorResponseWriter {
+
+    private static final ObjectMapper OBJECT_MAPPER =
+            new ObjectMapper();
 
     private SecurityErrorResponseWriter() {
     }
@@ -18,41 +23,19 @@ public final class SecurityErrorResponseWriter {
 
         response.setStatus(status);
         response.setCharacterEncoding("UTF-8");
-        response.setContentType("application/json;charset=UTF-8");
-
-        String safeCode = escapeJson(code);
-        String safeMessage = escapeJson(message);
-
-        String json = """
-                {
-                  "success": false,
-                  "data": null,
-                  "message": null,
-                  "error": {
-                    "code": "%s",
-                    "message": "%s"
-                  }
-                }
-                """.formatted(
-                safeCode,
-                safeMessage
+        response.setContentType(
+                "application/json;charset=UTF-8"
         );
 
-        response.getWriter().write(json);
-        response.getWriter().flush();
-    }
+        ApiResponse<Void> body =
+                ApiResponse.fail(
+                        code,
+                        message
+                );
 
-    private static String escapeJson(
-            String value
-    ) {
-        if (value == null) {
-            return "";
-        }
-
-        return value
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\r", "\\r")
-                .replace("\n", "\\n");
+        OBJECT_MAPPER.writeValue(
+                response.getWriter(),
+                body
+        );
     }
 }

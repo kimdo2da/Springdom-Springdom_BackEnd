@@ -1,9 +1,10 @@
 package com.example.lightsafe.user;
 
+import com.example.lightsafe.common.response.ApiResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -15,363 +16,190 @@ public class UserController {
     private final UserService userService;
     private final CurrentUserService currentUserService;
 
-    // 1. 회원가입
     @PostMapping("/register")
     public ApiResponse<Map<String, Long>> register(
-            @RequestBody UserRegisterRequest request
+            @RequestBody
+            @Valid
+            UserRegisterRequest request
     ) {
-        try {
-            Long userId = userService.register(request);
+        Long userId =
+                userService.register(request);
 
-            Map<String, Long> data = new HashMap<>();
-            data.put("userId", userId);
-
-            return new ApiResponse<>(
-                    true,
-                    data,
-                    "OK"
-            );
-
-        } catch (IllegalStateException e) {
-            return new ApiResponse<>(
-                    false,
-                    "CONFLICT",
-                    e.getMessage()
-            );
-        }
+        return ApiResponse.ok(
+                Map.of(
+                        "userId",
+                        userId
+                ),
+                "OK"
+        );
     }
 
-    // 2. 로그인
     @PostMapping("/login")
     public ApiResponse<Map<String, Object>> login(
-            @RequestBody UserLoginRequest request
+            @RequestBody
+            @Valid
+            UserLoginRequest request
     ) {
-        try {
-            Map<String, Object> data =
-                    userService.login(request);
-
-            return new ApiResponse<>(
-                    true,
-                    data,
-                    "로그인 성공"
-            );
-
-        } catch (SecurityException e) {
-            return new ApiResponse<>(
-                    false,
-                    "UNAUTHORIZED",
-                    e.getMessage()
-            );
-        }
+        return ApiResponse.ok(
+                userService.login(request),
+                "로그인 성공"
+        );
     }
 
-    // 3. 특정 사용자 조회
     @GetMapping("/{userId}")
     public ApiResponse<Map<String, Object>> getProfile(
             @PathVariable Long userId
     ) {
-        try {
-            Long loginUserId =
-                    currentUserService.getCurrentUserId();
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
 
-            Map<String, Object> data =
-                    userService.getProfile(
-                            userId,
-                            loginUserId
-                    );
-
-            return new ApiResponse<>(
-                    true,
-                    data,
-                    "프로필 조회 성공"
-            );
-
-        } catch (SecurityException e) {
-            return new ApiResponse<>(
-                    false,
-                    "FORBIDDEN",
-                    e.getMessage()
-            );
-
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(
-                    false,
-                    "NOT_FOUND",
-                    e.getMessage()
-            );
-        }
+        return ApiResponse.ok(
+                userService.getProfile(
+                        userId,
+                        loginUserId
+                ),
+                "프로필 조회 성공"
+        );
     }
 
-    // 4. 사용자 정보 수정
     @PutMapping("/{userId}")
     public ApiResponse<Map<String, Object>> updateProfile(
             @PathVariable Long userId,
-            @RequestBody UserUpdateRequest request
+            @RequestBody
+            @Valid
+            UserUpdateRequest request
     ) {
-        try {
-            Long loginUserId =
-                    currentUserService.getCurrentUserId();
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
 
-            Map<String, Object> data =
-                    userService.updateProfile(
-                            userId,
-                            loginUserId,
-                            request
-                    );
-
-            return new ApiResponse<>(
-                    true,
-                    data,
-                    "프로필 수정 성공"
-            );
-
-        } catch (SecurityException e) {
-            return new ApiResponse<>(
-                    false,
-                    "FORBIDDEN",
-                    e.getMessage()
-            );
-
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(
-                    false,
-                    "BAD_REQUEST",
-                    e.getMessage()
-            );
-
-        } catch (IllegalStateException e) {
-            return new ApiResponse<>(
-                    false,
-                    "CONFLICT",
-                    e.getMessage()
-            );
-        }
+        return ApiResponse.ok(
+                userService.updateProfile(
+                        userId,
+                        loginUserId,
+                        request
+                ),
+                "프로필 수정 성공"
+        );
     }
 
-    // 5. 특정 사용자 삭제
     @DeleteMapping("/{userId}")
-    public ApiResponse<String> deleteUser(
+    public ApiResponse<Void> deleteUser(
             @PathVariable Long userId
     ) {
-        try {
-            Long loginUserId =
-                    currentUserService.getCurrentUserId();
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
 
-            userService.deleteUser(
-                    userId,
-                    loginUserId
-            );
+        userService.deleteUser(
+                userId,
+                loginUserId
+        );
 
-            return new ApiResponse<>(
-                    true,
-                    null,
-                    "회원 탈퇴 성공"
-            );
-
-        } catch (SecurityException e) {
-            return new ApiResponse<>(
-                    false,
-                    "FORBIDDEN",
-                    e.getMessage()
-            );
-
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(
-                    false,
-                    "NOT_FOUND",
-                    e.getMessage()
-            );
-        }
+        return ApiResponse.ok(
+                null,
+                "회원 탈퇴 성공"
+        );
     }
 
-    // 6. 로그아웃
     @PostMapping("/logout")
-    public ApiResponse<String> logout() {
-        return new ApiResponse<>(
-                true,
+    public ApiResponse<Void> logout() {
+        return ApiResponse.ok(
                 null,
                 "로그아웃 성공"
         );
     }
 
-    // 7. 모든 사용자 조회
     @GetMapping
-    public ApiResponse<Object> getAllUsers() {
-        try {
-            Long loginUserId =
-                    currentUserService.getCurrentUserId();
+    public ApiResponse<List<Map<String, Object>>>
+    getAllUsers() {
 
-            List<Map<String, Object>> data =
-                    userService.getAllUsers(loginUserId);
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
 
-            return new ApiResponse<>(
-                    true,
-                    data,
-                    "전체 사용자 조회 성공"
-            );
-
-        } catch (SecurityException e) {
-            return new ApiResponse<>(
-                    false,
-                    "FORBIDDEN",
-                    e.getMessage()
-            );
-        }
+        return ApiResponse.ok(
+                userService.getAllUsers(
+                        loginUserId
+                ),
+                "전체 사용자 조회 성공"
+        );
     }
 
-    // 8. 인증 상태 확인
     @GetMapping("/auth-check")
     public ApiResponse<Map<String, Object>> checkAuth() {
         Long userId =
                 currentUserService.getCurrentUserId();
 
-        Map<String, Object> data = new HashMap<>();
-        data.put("userId", userId);
-
-        return new ApiResponse<>(
-                true,
-                data,
+        return ApiResponse.ok(
+                Map.of(
+                        "userId",
+                        userId
+                ),
                 "인증이 유효한 사용자입니다."
         );
     }
 
-    // 9. 내 허위신고 횟수 조회
     @GetMapping("/fake")
     public ApiResponse<Map<String, Object>>
     getFakeReportCount() {
-        try {
-            Long userId =
-                    currentUserService.getCurrentUserId();
 
-            int count =
-                    userService.getFakeReportCount(userId);
+        Long userId =
+                currentUserService.getCurrentUserId();
 
-            Map<String, Object> data = new HashMap<>();
-            data.put("falseReportCount", count);
-
-            return new ApiResponse<>(
-                    true,
-                    data,
-                    "허위신고 횟수 조회 성공"
-            );
-
-        } catch (SecurityException e) {
-            return new ApiResponse<>(
-                    false,
-                    "FORBIDDEN",
-                    e.getMessage()
-            );
-
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(
-                    false,
-                    "NOT_FOUND",
-                    e.getMessage()
-            );
-        }
+        return ApiResponse.ok(
+                Map.of(
+                        "falseReportCount",
+                        userService.getFakeReportCount(
+                                userId
+                        )
+                ),
+                "허위신고 횟수 조회 성공"
+        );
     }
 
-    // 10. 내 블랙리스트 여부 조회
     @GetMapping("/black")
     public ApiResponse<Map<String, Object>>
     getBlacklistStatus() {
-        try {
-            Long userId =
-                    currentUserService.getCurrentUserId();
 
-            boolean status =
-                    userService.getBlacklistStatus(userId);
+        Long userId =
+                currentUserService.getCurrentUserId();
 
-            Map<String, Object> data = new HashMap<>();
-            data.put("isBlacklisted", status);
-
-            return new ApiResponse<>(
-                    true,
-                    data,
-                    "블랙리스트 상태 조회 성공"
-            );
-
-        } catch (SecurityException e) {
-            return new ApiResponse<>(
-                    false,
-                    "FORBIDDEN",
-                    e.getMessage()
-            );
-
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(
-                    false,
-                    "NOT_FOUND",
-                    e.getMessage()
-            );
-        }
+        return ApiResponse.ok(
+                Map.of(
+                        "isBlacklisted",
+                        userService.getBlacklistStatus(
+                                userId
+                        )
+                ),
+                "블랙리스트 상태 조회 성공"
+        );
     }
 
-    // 11. 내 커뮤니티 작성 내역 조회
     @GetMapping("/my/posts")
     public ApiResponse<List<Map<String, Object>>>
     getMyPosts() {
-        try {
-            Long loginUserId =
-                    currentUserService.getCurrentUserId();
 
-            List<Map<String, Object>> data =
-                    userService.getMyPosts(loginUserId);
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
 
-            return new ApiResponse<>(
-                    true,
-                    data,
-                    "내 커뮤니티 작성 내역 조회 성공"
-            );
-
-        } catch (SecurityException e) {
-            return new ApiResponse<>(
-                    false,
-                    "FORBIDDEN",
-                    e.getMessage()
-            );
-
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(
-                    false,
-                    "NOT_FOUND",
-                    e.getMessage()
-            );
-        }
+        return ApiResponse.ok(
+                userService.getMyPosts(
+                        loginUserId
+                ),
+                "내 커뮤니티 작성 내역 조회 성공"
+        );
     }
 
-    // 12. 내 신고 내역 조회
     @GetMapping("/my/reports")
     public ApiResponse<List<Map<String, Object>>>
     getMyEmergencyReports() {
-        try {
-            Long loginUserId =
-                    currentUserService.getCurrentUserId();
 
-            List<Map<String, Object>> data =
-                    userService.getMyEmergencyReports(
-                            loginUserId
-                    );
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
 
-            return new ApiResponse<>(
-                    true,
-                    data,
-                    "내 신고 내역 조회 성공"
-            );
-
-        } catch (SecurityException e) {
-            return new ApiResponse<>(
-                    false,
-                    "FORBIDDEN",
-                    e.getMessage()
-            );
-
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(
-                    false,
-                    "NOT_FOUND",
-                    e.getMessage()
-            );
-        }
+        return ApiResponse.ok(
+                userService.getMyEmergencyReports(
+                        loginUserId
+                ),
+                "내 신고 내역 조회 성공"
+        );
     }
 }

@@ -7,6 +7,10 @@ import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import com.example.lightsafe.common.exception.BadRequestException;
+import com.example.lightsafe.common.exception.ForbiddenException;
+import com.example.lightsafe.common.exception.NotFoundException;
+import com.example.lightsafe.common.exception.UnauthorizedException;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -119,7 +123,7 @@ public class PostService {
     @Transactional(readOnly = true)
     public PostListPageResponse searchPosts(String keyword, int page, int size, String sort) {
         if (keyword == null || keyword.trim().isEmpty()) {
-            throw new IllegalArgumentException("게시글이 존재하지 않습니다");
+            throw new BadRequestException("검색어를 입력해주세요.");
         }
 
         int safePage = Math.max(page, 0);
@@ -150,7 +154,7 @@ public class PostService {
     @Transactional(readOnly = true)
     public PostDetailResponse getPostDetail(Long postId) {
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
 
         User currentUser = userService.getCurrentUser();
         boolean isLiked = false;
@@ -186,7 +190,7 @@ public class PostService {
     @Transactional
     public void increaseViewCount(Long postId) {
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
         Integer vc = post.getViewCount();
         post.setViewCount((vc == null ? 0 : vc) + 1);
     }
@@ -263,18 +267,18 @@ public class PostService {
     @Transactional
     public Long createComment(Long postId, CommentCreateRequest request) {
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
 
         User user = userService.getCurrentUser();
-        if (user == null) throw new IllegalArgumentException("로그인이 필요합니다.");
+        if (user == null) throw new UnauthorizedException("로그인이 필요합니다.");
 
         Comment parent = null;
         if (request.parentId() != null) {
             parent = commentRepository.findById(request.parentId())
-                    .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 부모 댓글입니다. id=" + request.parentId()));
+                    .orElseThrow(() -> new NotFoundException("존재하지 않는 부모 댓글입니다. id=" + request.parentId()));
 
             if (!Objects.equals(parent.getPost().getPostId(), postId)) {
-                throw new IllegalArgumentException("부모 댓글이 해당 게시글에 속하지 않습니다.");
+                throw new BadRequestException("부모 댓글이 해당 게시글에 속하지 않습니다.");
             }
         }
 
@@ -295,11 +299,11 @@ public class PostService {
     @Transactional
     public void updateComment(Long commentId, String content) {
         Comment comment = commentRepository.findById(commentId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 댓글입니다. id=" + commentId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 댓글입니다. id=" + commentId));
 
         User user = userService.getCurrentUser();
         if (user == null || !Objects.equals(comment.getUser().getUserId(), user.getUserId())) {
-            throw new IllegalArgumentException("본인의 댓글만 수정할 수 있습니다.");
+            throw new ForbiddenException("본인의 댓글만 수정할 수 있습니다.");
         }
 
         comment.setContent(content);
@@ -308,18 +312,18 @@ public class PostService {
     @Transactional
     public void deleteComment(Long postId, Long commentId) {
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
 
         Comment target = commentRepository.findById(commentId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 댓글입니다. id=" + commentId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 댓글입니다. id=" + commentId));
 
         User user = userService.getCurrentUser();
         if (user == null || !Objects.equals(target.getUser().getUserId(), user.getUserId())) {
-            throw new IllegalArgumentException("본인의 댓글만 삭제할 수 있습니다.");
+            throw new ForbiddenException("본인의 댓글만 삭제할 수 있습니다.");
         }
 
         if (!Objects.equals(target.getPost().getPostId(), postId)) {
-            throw new IllegalArgumentException("해당 게시글의 댓글이 아닙니다.");
+            throw new BadRequestException("해당 게시글의 댓글이 아닙니다.");
         }
 
         List<Long> deleteIds = collectDescendantIdsInclusive(postId, commentId);
@@ -379,12 +383,12 @@ public class PostService {
     @Transactional
     public void likePost(Long postId) {
         User user = userService.getCurrentUser();
-        if (user == null) throw new IllegalArgumentException("로그인이 필요합니다.");
+        if (user == null) throw new UnauthorizedException("로그인이 필요합니다.");
 
         if (postLikeRepository.existsByPostPostIdAndUserUserId(postId, user.getUserId())) return;
 
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
 
         PostLike like = new PostLike();
         like.setPost(post);
@@ -398,12 +402,12 @@ public class PostService {
     @Transactional
     public void unlikePost(Long postId) {
         User user = userService.getCurrentUser();
-        if (user == null) throw new IllegalArgumentException("로그인이 필요합니다.");
+        if (user == null) throw new UnauthorizedException("로그인이 필요합니다.");
 
         if (!postLikeRepository.existsByPostPostIdAndUserUserId(postId, user.getUserId())) return;
 
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
 
         postLikeRepository.deleteByPostPostIdAndUserUserId(postId, user.getUserId());
 
@@ -417,7 +421,7 @@ public class PostService {
     @Transactional public Long createPost(PostCreateRequest request) {
         User user = userService.getCurrentUser();
         if (user == null) {
-            throw new SecurityException("로그인이 필요합니다.");
+            throw new UnauthorizedException("로그인이 필요합니다.");
         }
         Post post = new Post();
         post.setTitle(request.title());
@@ -446,7 +450,7 @@ public class PostService {
 
         Post post = postRepository.findById(postId)
                 .orElseThrow(
-                        () -> new IllegalArgumentException(
+                        () -> new NotFoundException(
                                 "존재하지 않는 게시글입니다. id=" + postId
                         )
                 );
@@ -462,11 +466,11 @@ public class PostService {
     @Transactional
     public PostResponse updatePost(Long postId, PostUpdateRequest request) {
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
 
         User user = userService.getCurrentUser();
         if (user == null || !Objects.equals(post.getUser().getUserId(), user.getUserId())) {
-            throw new IllegalArgumentException("본인의 게시글만 수정할 수 있습니다.");
+            throw new ForbiddenException("본인의 게시글만 수정할 수 있습니다.");
         }
 
         post.setTitle(request.title());
@@ -483,11 +487,11 @@ public class PostService {
     @Transactional
     public void deletePost(Long postId) {
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
 
         User user = userService.getCurrentUser();
         if (user == null || !Objects.equals(post.getUser().getUserId(), user.getUserId())) {
-            throw new IllegalArgumentException("본인의 게시글만 삭제할 수 있습니다.");
+            throw new ForbiddenException("본인의 게시글만 삭제할 수 있습니다.");
         }
 
         //충돌 방지 댓글 먼저 삭제
@@ -503,21 +507,48 @@ public class PostService {
     @Transactional(readOnly = true)
     public PostAttachment getAttachment(Long attachmentId) {
         return postAttachmentRepository.findById(attachmentId)
-                .orElseThrow(() -> new IllegalArgumentException("첨부파일이 존재하지 않습니다. id=" + attachmentId));
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "첨부파일이 존재하지 않습니다. id="
+                                        + attachmentId
+                        )
+                );
     }
 
     @Transactional(readOnly = true)
-    public org.springframework.core.io.Resource loadAttachmentResource(Long attachmentId) {
-        PostAttachment attachment = getAttachment(attachmentId);
-        java.nio.file.Path path = fileStorageService.load(attachment.getStoredFilename());
+    public org.springframework.core.io.Resource
+    loadAttachmentResource(
+            Long attachmentId
+    ) {
+        PostAttachment attachment =
+                getAttachment(attachmentId);
+
+        java.nio.file.Path path =
+                fileStorageService.load(
+                        attachment.getStoredFilename()
+                );
+
         try {
-            org.springframework.core.io.Resource resource = new org.springframework.core.io.UrlResource(path.toUri());
+            org.springframework.core.io.Resource resource =
+                    new org.springframework.core.io.UrlResource(
+                            path.toUri()
+                    );
+
             if (!resource.exists()) {
-                throw new IllegalArgumentException("첨부파일을 찾을 수 없습니다.");
+                throw new NotFoundException(
+                        "첨부파일을 찾을 수 없습니다."
+                );
             }
+
             return resource;
+
+        } catch (NotFoundException e) {
+            throw e;
+
         } catch (Exception e) {
-            throw new IllegalArgumentException("첨부파일을 찾을 수 없습니다.");
+            throw new NotFoundException(
+                    "첨부파일을 찾을 수 없습니다."
+            );
         }
     }
 
@@ -561,7 +592,7 @@ public class PostService {
         User admin = requireAdmin();
 
         if (!hasAtLeastOneFile(files)) {
-            throw new IllegalArgumentException(
+            throw new BadRequestException(
                     "첨부파일은 최소 1개 이상 필요합니다."
             );
         }
@@ -587,7 +618,7 @@ public class PostService {
         User admin = userService.getCurrentUser();
 
         if (admin == null) {
-            throw new SecurityException(
+            throw new UnauthorizedException(
                     "로그인이 필요합니다."
             );
         }
@@ -595,7 +626,7 @@ public class PostService {
         if (!"ADMIN".equalsIgnoreCase(
                 admin.getRole()
         )) {
-            throw new SecurityException(
+            throw new ForbiddenException(
                     "관리자만 공지사항을 작성할 수 있습니다."
             );
         }

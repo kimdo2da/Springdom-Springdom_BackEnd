@@ -4,7 +4,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
+import com.example.lightsafe.common.response.ApiResponse;
 
 import java.util.List;
 
@@ -24,20 +24,20 @@ public class DangerZoneController {
     }
 
     @GetMapping
-    public ResponseEntity<EmergencyApiResponse<List<PublicDangerZoneResponse>>> getDangerZones() {
+    public ResponseEntity<ApiResponse<List<PublicDangerZoneResponse>>> getDangerZones() {
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(
+                ApiResponse.ok(
                         dangerZoneService.getDangerZones()
                 )
         );
     }
 
     @GetMapping("/{dangerZoneId}")
-    public ResponseEntity<EmergencyApiResponse<PublicDangerZoneResponse>> getDangerZoneDetail(
+    public ResponseEntity<ApiResponse<PublicDangerZoneResponse>> getDangerZoneDetail(
             @PathVariable Long dangerZoneId
     ) {
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(
+                ApiResponse.ok(
                         dangerZoneService.getDangerZoneDetail(dangerZoneId)
                 )
         );
@@ -45,12 +45,12 @@ public class DangerZoneController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{dangerZoneId}/level")
-    public ResponseEntity<EmergencyApiResponse<DangerZoneResponse>> updateDangerLevel(
+    public ResponseEntity<ApiResponse<DangerZoneResponse>> updateDangerLevel(
             @PathVariable Long dangerZoneId,
             @RequestBody @Valid DangerLevelUpdateRequest request
     ) {
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(
+                ApiResponse.ok(
                         dangerZoneService.updateDangerLevel(dangerZoneId, request),
                         "DANGER_LEVEL_UPDATED"
                 )
@@ -59,11 +59,11 @@ public class DangerZoneController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{dangerZoneId}/deactivate")
-    public ResponseEntity<EmergencyApiResponse<DangerZoneResponse>> deactivateDangerZone(
+    public ResponseEntity<ApiResponse<DangerZoneResponse>> deactivateDangerZone(
             @PathVariable Long dangerZoneId
     ) {
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(
+                ApiResponse.ok(
                         dangerZoneService.deactivateDangerZone(dangerZoneId),
                         "DANGER_ZONE_DEACTIVATED"
                 )
@@ -72,11 +72,11 @@ public class DangerZoneController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/{dangerZoneId}/reports")
-    public ResponseEntity<EmergencyApiResponse<List<EmergencyReportResponse>>> getReportsByDangerZone(
+    public ResponseEntity<ApiResponse<List<EmergencyReportResponse>>> getReportsByDangerZone(
             @PathVariable Long dangerZoneId
     ) {
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(
+                ApiResponse.ok(
                         emergencyReportService.getReportsByDangerZone(dangerZoneId)
                 )
         );

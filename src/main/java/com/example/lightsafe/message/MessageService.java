@@ -5,6 +5,9 @@ import com.example.lightsafe.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.lightsafe.common.exception.BadRequestException;
+import com.example.lightsafe.common.exception.ForbiddenException;
+import com.example.lightsafe.common.exception.NotFoundException;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -23,13 +26,13 @@ public class MessageService {
     public void sendMessage(Long senderId, Long receiverId, String content) {
         // 1. 발신자 및 수신자 유효성 검증
         User sender = userRepository.findById(senderId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 발신자입니다."));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 발신자입니다."));
         User receiver = userRepository.findById(receiverId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 수신자입니다."));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 수신자입니다."));
 
         // 2. 쪽지 내용 공백 검증
         if (content == null || content.trim().isEmpty()) {
-            throw new IllegalArgumentException("쪽지 내용을 입력해 주세요.");
+            throw new BadRequestException("쪽지 내용을 입력해 주세요.");
         }
 
         // 3. 쪽지 엔티티 생성 및 저장
@@ -96,13 +99,13 @@ public class MessageService {
     public Map<String, Object> getMessageDetail(Long messageId, Long loginUserId) {
         // 1. 쪽지 존재 여부 확인
         Message msg = messageRepository.findById(messageId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 쪽지입니다. id=" + messageId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 쪽지입니다. id=" + messageId));
 
         // 2. 권한 검증: 발신자 또는 수신자가 아닌 경우 열람 차단
         boolean isSender = msg.getSender().getUserId().equals(loginUserId);
         boolean isReceiver = msg.getReceiver().getUserId().equals(loginUserId);
         if (!isSender && !isReceiver) {
-            throw new SecurityException("이 쪽지를 열람할 권한이 없습니다.");
+            throw new ForbiddenException("이 쪽지를 열람할 권한이 없습니다.");
         }
 
         // 3. 읽음 처리: 수신자가 처음 열람하는 경우 읽음 상태로 변경
@@ -127,7 +130,7 @@ public class MessageService {
     public void deleteMessage(Long messageId, Long loginUserId) {
         // 1. 쪽지 존재 여부 확인
         Message msg = messageRepository.findById(messageId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 쪽지입니다. id=" + messageId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 쪽지입니다. id=" + messageId));
 
         boolean isSender = msg.getSender().getUserId().equals(loginUserId);
         boolean isReceiver = msg.getReceiver().getUserId().equals(loginUserId);
@@ -138,7 +141,7 @@ public class MessageService {
         } else if (isReceiver) {
             msg.setDeletedByReceiver(true);
         } else {
-            throw new SecurityException("이 쪽지를 삭제할 권한이 없습니다.");
+            throw new ForbiddenException("이 쪽지를 삭제할 권한이 없습니다.");
         }
 
         // 3. 양측 모두 삭제 처리한 경우 DB에서 영구 삭제
