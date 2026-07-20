@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -191,13 +192,59 @@ public class PostController {
         return ResponseEntity.ok(PostApiResponse.ok(Map.of("postId", postId), "UNLIKED"));
     }
 
-    // ✅ 공지 작성(관리자 전용)
+    // ✅ 파일 없는 공지 작성(관리자 전용)
     @PostMapping("/admin/notices")
-    //@org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<PostApiResponse<Map<String, Long>>> createNotice(
             @RequestBody @Valid AdminNoticeCreateRequest request
     ) {
         Long postId = postService.createNotice(request);
-        return ResponseEntity.ok(PostApiResponse.ok(Map.of("postId", postId)));
+
+        return ResponseEntity.ok(
+                PostApiResponse.ok(
+                        Map.of("postId", postId)
+                )
+        );
+    }
+
+
+    // ✅ 첨부파일이 있는 공지 작성(관리자 전용)
+    @PostMapping(
+            value = "/admin/notices/with-files",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<PostApiResponse<Map<String, Long>>> createNoticeWithFiles(
+            @RequestParam(required = false) String title,
+            @RequestParam(required = false) String content,
+            @RequestPart(required = false) List<MultipartFile> files
+    ) {
+        if (title == null
+                || title.isBlank()
+                || content == null
+                || content.isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "제목과 내용은 필수입니다."
+            );
+        }
+
+        AdminNoticeCreateRequest request =
+                new AdminNoticeCreateRequest(
+                        title,
+                        content
+                );
+
+        Long postId =
+                postService.createNoticeWithFiles(
+                        request,
+                        files
+                );
+
+        return ResponseEntity.ok(
+                PostApiResponse.ok(
+                        Map.of("postId", postId)
+                )
+        );
     }
 }

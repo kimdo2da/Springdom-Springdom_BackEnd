@@ -4,11 +4,26 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.security.access.AccessDeniedException;
 
 // ✅ post 패키지에만 적용되도록 제한
 @RestControllerAdvice(basePackages = "com.example.lightsafe.post")
 public class PostExceptionHandler {
 
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<PostApiErrorResponse>
+    handleAccessDeniedException(
+            AccessDeniedException e
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(
+                        PostApiErrorResponse.of(
+                                403,
+                                "관리자 권한이 필요합니다."
+                        )
+                );
+    }
     // 404: "존재하지 않는 ~" 류 메시지면 Not Found로 내려줌
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<PostApiErrorResponse> handleIllegalArgument(IllegalArgumentException e) {

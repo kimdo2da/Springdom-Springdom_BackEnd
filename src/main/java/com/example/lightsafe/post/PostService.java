@@ -6,6 +6,7 @@ import com.example.lightsafe.user.UserService;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -433,7 +434,10 @@ public class PostService {
     }
 
     @Transactional
-    public Long createPostWithFiles(PostCreateRequest request, java.util.List<org.springframework.web.multipart.MultipartFile> files) {
+    public Long createPostWithFiles(
+            PostCreateRequest request,
+            List<MultipartFile> files
+    ) {
         Long postId = createPost(request);
 
         if (files == null || files.isEmpty()) {
@@ -441,20 +445,16 @@ public class PostService {
         }
 
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(
+                        () -> new IllegalArgumentException(
+                                "존재하지 않는 게시글입니다. id=" + postId
+                        )
+                );
 
-        for (org.springframework.web.multipart.MultipartFile file : files) {
-            if (file == null || file.isEmpty()) continue;
-
-            FileStorageService.StoredFile stored = fileStorageService.store(file);
-            PostAttachment attachment = new PostAttachment();
-            attachment.setPost(post);
-            attachment.setOriginalFilename(stored.originalFilename());
-            attachment.setStoredFilename(stored.storedFilename());
-            attachment.setContentType(stored.contentType());
-            attachment.setFileSize(stored.size());
-            postAttachmentRepository.save(attachment);
-        }
+        saveAttachments(
+                post,
+                files
+        );
 
         return postId;
     }
@@ -536,23 +536,149 @@ public class PostService {
     // 7) 공지 작성: 관리자 전용
     // =========================================================
     @Transactional
-    public Long createNotice(AdminNoticeCreateRequest request) {
+    public Long createNotice(
+            AdminNoticeCreateRequest request
+    ) {
+        User admin = requireAdmin();
+
+        Post post = buildNotice(
+                admin,
+                request
+        );
+
+        return postRepository
+                .save(post)
+                .getPostId();
+    }
+
+
+    // 첨부파일이 있는 관리자 공지 작성
+    @Transactional
+    public Long createNoticeWithFiles(
+            AdminNoticeCreateRequest request,
+            List<MultipartFile> files
+    ) {
+        User admin = requireAdmin();
+
+        if (!hasAtLeastOneFile(files)) {
+            throw new IllegalArgumentException(
+                    "첨부파일은 최소 1개 이상 필요합니다."
+            );
+        }
+
+        Post post = postRepository.save(
+                buildNotice(
+                        admin,
+                        request
+                )
+        );
+
+        saveAttachments(
+                post,
+                files
+        );
+
+        return post.getPostId();
+    }
+
+
+    // 현재 로그인 사용자가 관리자인지 확인
+    private User requireAdmin() {
         User admin = userService.getCurrentUser();
 
-        if(admin == null){
-            throw new SecurityException("로그인이 필요합니다.");
-        }
-        if(!"ADMIN".equalsIgnoreCase(admin.getRole())){
-            throw  new SecurityException("관리자만 공지사항을 작성할 수 있습니다.");
+        if (admin == null) {
+            throw new SecurityException(
+                    "로그인이 필요합니다."
+            );
         }
 
+        if (!"ADMIN".equalsIgnoreCase(
+                admin.getRole()
+        )) {
+            throw new SecurityException(
+                    "관리자만 공지사항을 작성할 수 있습니다."
+            );
+        }
+
+        return admin;
+    }
+
+
+    // 공지사항 엔티티 공통 생성
+    private Post buildNotice(
+            User admin,
+            AdminNoticeCreateRequest request
+    ) {
         Post post = new Post();
-        post.setTitle(request.title());
-        post.setContent(request.content());
-        post.setUser(admin);
-        post.setCategory("NOTICE"); // ✅ 카테고리 고정
-        post.setIsNotice(true); // ✅ 여기서만 공지 생성
 
-        return postRepository.save(post).getPostId();
+        post.setTitle(
+                request.title()
+        );
+        post.setContent(
+                request.content()
+        );
+        post.setUser(
+                admin
+        );
+        post.setCategory(
+                "NOTICE"
+        );
+        post.setIsNotice(
+                true
+        );
+
+        return post;
+    }
+    private boolean hasAtLeastOneFile(
+            List<MultipartFile> files
+    ) {
+        return files != null
+                && files.stream()
+                .anyMatch(
+                        file -> file != null
+                                && !file.isEmpty()
+                );
+    }
+
+
+    private void saveAttachments(
+            Post post,
+            List<MultipartFile> files
+    ) {
+        if (files == null || files.isEmpty()) {
+            return;
+        }
+
+        for (MultipartFile file : files) {
+            if (file == null || file.isEmpty()) {
+                continue;
+            }
+
+            FileStorageService.StoredFile stored =
+                    fileStorageService.store(file);
+
+            PostAttachment attachment =
+                    new PostAttachment();
+
+            attachment.setPost(
+                    post
+            );
+            attachment.setOriginalFilename(
+                    stored.originalFilename()
+            );
+            attachment.setStoredFilename(
+                    stored.storedFilename()
+            );
+            attachment.setContentType(
+                    stored.contentType()
+            );
+            attachment.setFileSize(
+                    stored.size()
+            );
+
+            postAttachmentRepository.save(
+                    attachment
+            );
+        }
     }
 }
