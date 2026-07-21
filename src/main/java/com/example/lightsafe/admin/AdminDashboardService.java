@@ -43,8 +43,7 @@ public class AdminDashboardService {
                                 startOfTomorrow
                         );
 
-        long totalUsers =
-                userRepository.count();
+        long totalUsers = userRepository.countByDeletedFalse();
 
         return new AdminDashboardSummaryResponse(
                 totalPosts,

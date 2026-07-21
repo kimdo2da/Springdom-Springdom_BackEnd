@@ -15,6 +15,7 @@ public class UserController {
 
     private final UserService userService;
     private final CurrentUserService currentUserService;
+    private final UserWithdrawalService userWithdrawalService;
 
     @PostMapping("/register")
     public ApiResponse<Map<String, Long>> register(
@@ -87,9 +88,10 @@ public class UserController {
             @PathVariable Long userId
     ) {
         Long loginUserId =
-                currentUserService.getCurrentUserId();
+                currentUserService
+                        .getCurrentUserId();
 
-        userService.deleteUser(
+        userWithdrawalService.withdraw(
                 userId,
                 loginUserId
         );

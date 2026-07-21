@@ -5,6 +5,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.time.LocalDateTime;
@@ -38,5 +41,39 @@ public interface PostRepository extends JpaRepository<Post, Long> {
     long countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(
             LocalDateTime startDateTime,
             LocalDateTime endDateTime
+    );
+    @Modifying(
+            flushAutomatically = true,
+            clearAutomatically = true
+    )
+    @Query("""
+        UPDATE Post post
+           SET post.title = :deletedTitle,
+               post.content = :deletedContent
+         WHERE post.user.userId = :userId
+        """)
+    int anonymizePostsByUserId(
+            @Param("userId")
+            Long userId,
+
+            @Param("deletedTitle")
+            String deletedTitle,
+
+            @Param("deletedContent")
+            String deletedContent
+    );
+
+    @Modifying(flushAutomatically = true)
+    @Query("""
+        UPDATE Post post
+           SET post.likeCount = :likeCount
+         WHERE post.postId = :postId
+        """)
+    int updateLikeCount(
+            @Param("postId")
+            Long postId,
+
+            @Param("likeCount")
+            int likeCount
     );
 }

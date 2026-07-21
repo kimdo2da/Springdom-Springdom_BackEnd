@@ -27,6 +27,7 @@ public class JwtFilter
         extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
+    private final UserRepository userRepository;
 
     private final JwtAuthenticationEntryPoint
             authenticationEntryPoint;
@@ -104,10 +105,27 @@ public class JwtFilter
                             token
                     );
 
+            User user =
+                    userRepository
+                            .findById(userId)
+                            .orElse(null);
+
+            if (user == null
+                    || user.isDeleted()) {
+
+                SecurityContextHolder.clearContext();
+
+                sendUnauthorized(
+                        request,
+                        response,
+                        "존재하지 않거나 탈퇴한 계정입니다."
+                );
+
+                return;
+            }
+
             String role =
-                    jwtUtil.getRoleFromToken(
-                            token
-                    );
+                    user.getRole();
 
             if (role == null
                     || role.isBlank()) {

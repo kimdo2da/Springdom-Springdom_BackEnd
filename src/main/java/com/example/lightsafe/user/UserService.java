@@ -34,14 +34,29 @@ public class UserService {
     // [공통 기능] 타 도메인(커뮤니티 등) 연동용 메서드
     // ==========================================
     @Transactional(readOnly = true)
-    public User getUserById(Long userId) {
-        return userRepository.findById(userId)
-                .orElseThrow(() -> new NotFoundException("존재하지 않는 유저입니다. 유저 ID: " + userId));
+    public User getUserById(
+            Long userId
+    ) {
+        return userRepository
+                .findByUserIdAndDeletedFalse(
+                        userId
+                )
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "존재하지 않는 유저입니다. 유저 ID: "
+                                        + userId
+                        )
+                );
     }
 
     @Transactional(readOnly = true)
-    public boolean existsUser(Long userId) {
-        return userRepository.existsById(userId);
+    public boolean existsUser(
+            Long userId
+    ) {
+        return userRepository
+                .existsByUserIdAndDeletedFalse(
+                        userId
+                );
     }
 
     // ==========================================
@@ -49,42 +64,114 @@ public class UserService {
     // ==========================================
 
     // 1. 회원가입
-    public Long register(UserRegisterRequest request) {
-        if (userRepository.findByUsername(request.getUsername()).isPresent()) {
-            throw new ConflictException("이미 존재하는 아이디입니다.");
+    public Long register(
+            UserRegisterRequest request
+    ) {
+        if (userRepository
+                .findByUsername(
+                        request.getUsername()
+                )
+                .isPresent()) {
+
+            throw new ConflictException(
+                    "이미 존재하는 아이디입니다."
+            );
         }
 
-        String encodedPassword = passwordEncoder.encode(request.getPassword());
+        if (userRepository
+                .findByEmail(
+                        request.getEmail()
+                )
+                .isPresent()) {
 
-        User newUser = User.builder()
-                .username(request.getUsername())
-                .email(request.getEmail())
-                .password(encodedPassword)
-                .nickname(request.getNickname())
-                .falseReportCount(0)
-                .isBlacklisted(false)
-                .role("USER")
-                .build();
+            throw new ConflictException(
+                    "이미 사용 중인 이메일입니다."
+            );
+        }
 
-        return userRepository.save(newUser).getUserId();
+        String encodedPassword =
+                passwordEncoder.encode(
+                        request.getPassword()
+                );
+
+        User newUser =
+                User.builder()
+                        .username(
+                                request.getUsername()
+                        )
+                        .email(
+                                request.getEmail()
+                        )
+                        .password(
+                                encodedPassword
+                        )
+                        .nickname(
+                                request.getNickname()
+                        )
+                        .falseReportCount(0)
+                        .isBlacklisted(false)
+                        .role("USER")
+                        .deleted(false)
+                        .build();
+
+        return userRepository
+                .save(newUser)
+                .getUserId();
     }
 
     // 2. 로그인
     @Transactional(readOnly = true)
-    public Map<String, Object> login(UserLoginRequest request) {
-        User user = userRepository.findByUsername(request.getUsernameOrEmail())
-                .orElseThrow(() -> new UnauthorizedException("아이디 또는 비밀번호가 일치하지 않습니다."));
+    public Map<String, Object> login(
+            UserLoginRequest request
+    ) {
+        User user =
+                userRepository
+                        .findByUsername(
+                                request.getUsernameOrEmail()
+                        )
+                        .orElseThrow(() ->
+                                new UnauthorizedException(
+                                        "아이디 또는 비밀번호가 일치하지 않습니다."
+                                )
+                        );
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new UnauthorizedException("아이디 또는 비밀번호가 일치하지 않습니다.");
+        if (user.isDeleted()) {
+            throw new UnauthorizedException(
+                    "탈퇴한 계정입니다."
+            );
         }
 
-        String realToken = jwtUtil.generateToken(user.getUserId(), user.getRole());
+        if (!passwordEncoder.matches(
+                request.getPassword(),
+                user.getPassword()
+        )) {
+            throw new UnauthorizedException(
+                    "아이디 또는 비밀번호가 일치하지 않습니다."
+            );
+        }
 
-        Map<String, Object> data = new HashMap<>();
-        data.put("accessToken", realToken);
-        data.put("userId", user.getUserId());
-        data.put("username", user.getUsername());
+        String realToken =
+                jwtUtil.generateToken(
+                        user.getUserId(),
+                        user.getRole()
+                );
+
+        Map<String, Object> data =
+                new HashMap<>();
+
+        data.put(
+                "accessToken",
+                realToken
+        );
+        data.put(
+                "userId",
+                user.getUserId()
+        );
+        data.put(
+                "username",
+                user.getUsername()
+        );
+
         return data;
     }
 
@@ -160,20 +247,8 @@ public class UserService {
         return data;
     }
 
-    // 5. 삭제
-    public void deleteUser(Long targetUserId, Long loginUserId) {
-        User loginUser = getUserById(loginUserId);
+    // 5. 삭제 교체 우선 냅둠
 
-        if (!loginUserId.equals(targetUserId) && !"ADMIN".equals(loginUser.getRole())) {
-            throw new ForbiddenException("본인 또는 관리자만 탈퇴 처리할 수 있습니다.");
-        }
-
-        if (!userRepository.existsById(targetUserId)) {
-            throw new NotFoundException("존재하지 않는 유저입니다.");
-        }
-
-        userRepository.deleteById(targetUserId);
-    }
 
     // 7. 전체 조회 (관리자용)
     @Transactional(readOnly = true)
@@ -184,7 +259,9 @@ public class UserService {
             throw new ForbiddenException("관리자 권한이 필요합니다.");
         }
 
-        List<User> users = userRepository.findAll();
+        List<User> users =
+                userRepository
+                        .findAllByDeletedFalseOrderByUserIdAsc();
         List<Map<String, Object>> data = new ArrayList<>();
 
         for (User user : users) {
@@ -220,7 +297,7 @@ public class UserService {
     // 11. 내 커뮤니티(게시판) 작성 내역 조회
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getMyPosts(Long loginUserId) {
-        if (!userRepository.existsById(loginUserId)) {
+        if (!userRepository.existsByUserIdAndDeletedFalse(loginUserId)) {
             throw new NotFoundException("존재하지 않는 유저입니다.");
         }
 
@@ -245,7 +322,7 @@ public class UserService {
     // 12. 내 신고 내역 조회
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getMyEmergencyReports(Long loginUserId) {
-        if (!userRepository.existsById(loginUserId)) {
+        if (!userRepository.existsByUserIdAndDeletedFalse(loginUserId)) {
             throw new NotFoundException("존재하지 않는 유저입니다.");
         }
 
@@ -286,10 +363,13 @@ public class UserService {
         Long loginUserId = Long.valueOf(authentication.getName());
 
         // 4. DB에서 해당 유저 엔티티를 찾아서 반환합니다.
-        return userRepository.findById(loginUserId)
+        return userRepository
+                .findByUserIdAndDeletedFalse(
+                        loginUserId
+                )
                 .orElseThrow(() ->
                         new UnauthorizedException(
-                                "토큰에 해당하는 유저를 찾을 수 없습니다."
+                                "유효한 로그인 사용자를 찾을 수 없습니다."
                         )
                 );
     }

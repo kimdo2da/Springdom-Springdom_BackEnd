@@ -71,10 +71,12 @@ public class CurrentUserService {
                 getCurrentUserId();
 
         return userRepository
-                .findById(userId)
+                .findByUserIdAndDeletedFalse(
+                        userId
+                )
                 .orElseThrow(() ->
                         new UnauthorizedException(
-                                "로그인 사용자 정보가 존재하지 않습니다."
+                                "로그인 사용자 정보가 존재하지 않거나 탈퇴한 계정입니다."
                         )
                 );
     }
