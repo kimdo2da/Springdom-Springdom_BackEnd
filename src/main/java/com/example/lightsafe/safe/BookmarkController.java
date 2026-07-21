@@ -1,7 +1,7 @@
 package com.example.lightsafe.safe;
 
-import com.example.lightsafe.common.exception.NotFoundException;
 import com.example.lightsafe.common.response.ApiResponse;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -10,77 +10,57 @@ import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
+@RequestMapping("/bookmarks")
 @CrossOrigin(origins = "*")
 public class BookmarkController {
 
-    private final BookmarkRepository bookmarkRepository;
+    private final BookmarkService bookmarkService;
 
-    @PostMapping("/bookmarks")
-    public ResponseEntity<ApiResponse<Void>>
-    saveBookmark(
-            @RequestBody BookmarkRequestDto request
+    @PostMapping
+    public ResponseEntity<
+            ApiResponse<BookmarkResponse>
+            > saveBookmark(
+            @RequestBody
+            @Valid
+            BookmarkRequestDto request
     ) {
-        Bookmark bookmark = new Bookmark();
-
-        bookmark.setRouteName(
-                request.getRouteName()
-        );
-        bookmark.setStartLatitude(
-                request.getStartLatitude()
-        );
-        bookmark.setStartLongitude(
-                request.getStartLongitude()
-        );
-        bookmark.setEndLatitude(
-                request.getEndLatitude()
-        );
-        bookmark.setEndLongitude(
-                request.getEndLongitude()
-        );
-        bookmark.setSafetyScore(
-                request.getSafetyScore()
-        );
-
-        bookmarkRepository.save(
-                bookmark
-        );
+        BookmarkResponse data =
+                bookmarkService.saveBookmark(
+                        request
+                );
 
         return ResponseEntity.ok(
                 ApiResponse.ok(
-                        null,
+                        data,
                         "북마크가 성공적으로 저장되었습니다."
                 )
         );
     }
 
-    @GetMapping("/bookmarks")
+    @GetMapping
     public ResponseEntity<
-            ApiResponse<List<Bookmark>>
-            > getAllBookmarks() {
+            ApiResponse<List<BookmarkResponse>>
+            > getMyBookmarks() {
 
-        List<Bookmark> list =
-                bookmarkRepository.findAll();
+        List<BookmarkResponse> data =
+                bookmarkService.getMyBookmarks();
 
         return ResponseEntity.ok(
                 ApiResponse.ok(
-                        list,
-                        "북마크 목록 조회 성공"
+                        data,
+                        "내 북마크 목록 조회 성공"
                 )
         );
     }
 
-    @DeleteMapping("/bookmarks/{id}")
+    @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>>
     deleteBookmark(
             @PathVariable Long id
     ) {
-        if (!bookmarkRepository.existsById(id)) {
-            throw new NotFoundException(
-                    "존재하지 않는 북마크입니다. id=" + id
-            );
-        }
-
-        bookmarkRepository.deleteById(id);
+        bookmarkService.deleteMyBookmark(
+                id
+        );
 
         return ResponseEntity.ok(
                 ApiResponse.ok(

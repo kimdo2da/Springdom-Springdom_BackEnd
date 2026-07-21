@@ -2,5 +2,20 @@ package com.example.lightsafe.safe;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface BookmarkRepository extends JpaRepository<Bookmark, Long> {
+import java.util.List;
+import java.util.Optional;
+
+public interface BookmarkRepository
+        extends JpaRepository<Bookmark, Long> {
+
+    List<Bookmark>
+    findAllByUser_UserIdOrderByIdDesc(
+            Long userId
+    );
+
+    Optional<Bookmark>
+    findByIdAndUser_UserId(
+            Long id,
+            Long userId
+    );
 }
