@@ -26,6 +26,29 @@ public class PostService {
     private final UserRepository userRepository;
     private final UserService userService;
 
+    private static final String CATEGORY_NOTICE =
+            "NOTICE";
+
+    private static final String DEFAULT_POST_CATEGORY =
+            "INFO";
+
+    private static final Set<String> USER_POST_CATEGORIES =
+            Set.of(
+                    "INFO",
+                    "QUESTION",
+                    "REPORT",
+                    "TIP"
+            );
+
+    private static final Set<String> READABLE_CATEGORIES =
+            Set.of(
+                    "NOTICE",
+                    "INFO",
+                    "QUESTION",
+                    "REPORT",
+                    "TIP"
+            );
+
     public PostService(
             PostRepository postRepository,
             CommentRepository commentRepository,
@@ -100,24 +123,64 @@ public class PostService {
     }
 
     @Transactional(readOnly = true)
-    public PostListPageResponse getPostsByCategory(String category, int page, int size, String sort) {
-        Sort sortSpec = buildSearchSort(sort);
-        Pageable pageable = PageRequest.of(page, size, sortSpec);
-        Page<Post> postPage = postRepository.findByCategory(category, pageable);
+    public PostListPageResponse getPostsByCategory(
+            String category,
+            int page,
+            int size,
+            String sort
+    ) {
+        String normalizedCategory =
+                normalizeReadableCategory(
+                        category
+                );
 
-        List<PostListResponse> items = postPage.getContent()
-                .stream()
-                .map(PostListResponse::from)
-                .toList();
+        int safePage =
+                Math.max(
+                        page,
+                        0
+                );
 
-        PostPageInfo pageInfo = new PostPageInfo(
-                postPage.getNumber(),
-                postPage.getSize(),
-                postPage.getTotalElements(),
-                postPage.getTotalPages()
+        int safeSize =
+                size <= 0
+                        ? 10
+                        : size;
+
+        Sort sortSpec =
+                buildSearchSort(
+                        sort
+                );
+
+        Pageable pageable =
+                PageRequest.of(
+                        safePage,
+                        safeSize,
+                        sortSpec
+                );
+
+        Page<Post> postPage =
+                postRepository.findByCategory(
+                        normalizedCategory,
+                        pageable
+                );
+
+        List<PostListResponse> items =
+                postPage.getContent()
+                        .stream()
+                        .map(PostListResponse::from)
+                        .toList();
+
+        PostPageInfo pageInfo =
+                new PostPageInfo(
+                        postPage.getNumber(),
+                        postPage.getSize(),
+                        postPage.getTotalElements(),
+                        postPage.getTotalPages()
+                );
+
+        return new PostListPageResponse(
+                items,
+                pageInfo
         );
-
-        return new PostListPageResponse(items, pageInfo);
     }
 
     @Transactional(readOnly = true)
@@ -410,6 +473,96 @@ public class PostService {
             default -> Sort.by(Sort.Direction.DESC, "createdAt");
         };
     }
+    private String normalizeReadableCategory(
+            String category
+    ) {
+        if (category == null
+                || category.isBlank()) {
+
+            throw new BadRequestException(
+                    "카테고리를 입력해주세요."
+            );
+        }
+
+        String normalized =
+                category
+                        .trim()
+                        .toUpperCase(
+                                Locale.ROOT
+                        );
+
+        if (!READABLE_CATEGORIES.contains(
+                normalized
+        )) {
+            throw new BadRequestException(
+                    "허용되지 않은 게시글 카테고리입니다. 허용값: NOTICE, INFO, QUESTION, REPORT, TIP"
+            );
+        }
+
+        return normalized;
+    }
+
+
+    private String normalizeCreateCategory(
+            String category
+    ) {
+        if (category == null
+                || category.isBlank()) {
+
+            return DEFAULT_POST_CATEGORY;
+        }
+
+        return normalizeUserPostCategory(
+                category
+        );
+    }
+
+
+    private String normalizeUpdateCategory(
+            String category
+    ) {
+        if (category == null
+                || category.isBlank()) {
+
+            throw new BadRequestException(
+                    "카테고리를 입력해주세요."
+            );
+        }
+
+        return normalizeUserPostCategory(
+                category
+        );
+    }
+
+
+    private String normalizeUserPostCategory(
+            String category
+    ) {
+        String normalized =
+                category
+                        .trim()
+                        .toUpperCase(
+                                Locale.ROOT
+                        );
+
+        if (CATEGORY_NOTICE.equals(
+                normalized
+        )) {
+            throw new BadRequestException(
+                    "일반 게시글은 NOTICE 카테고리를 사용할 수 없습니다."
+            );
+        }
+
+        if (!USER_POST_CATEGORIES.contains(
+                normalized
+        )) {
+            throw new BadRequestException(
+                    "허용되지 않은 게시글 카테고리입니다. 허용값: INFO, QUESTION, REPORT, TIP"
+            );
+        }
+
+        return normalized;
+    }
 
 
     // =========================================================
@@ -436,40 +589,90 @@ public class PostService {
 
     @Transactional
     public void unlikePost(Long postId) {
-        User user = userService.getCurrentUser();
-        if (user == null) throw new UnauthorizedException("로그인이 필요합니다.");
+        User user =
+                userService.getCurrentUser();
 
-        if (!postLikeRepository.existsByPostPostIdAndUserUserId(postId, user.getUserId())) return;
+        if (user == null) {
+            throw new UnauthorizedException(
+                    "로그인이 필요합니다."
+            );
+        }
 
-        Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
+        Post post =
+                postRepository.findById(
+                                postId
+                        )
+                        .orElseThrow(() ->
+                                new NotFoundException(
+                                        "존재하지 않는 게시글입니다. id=" + postId
+                                )
+                        );
 
-        postLikeRepository.deleteByPostPostIdAndUserUserId(postId, user.getUserId());
+        if (!postLikeRepository.existsByPostPostIdAndUserUserId(
+                postId,
+                user.getUserId()
+        )) {
+            return;
+        }
 
-        Integer lc = post.getLikeCount();
-        post.setLikeCount(Math.max(0, (lc == null ? 0 : lc) - 1));
+        postLikeRepository.deleteByPostPostIdAndUserUserId(
+                postId,
+                user.getUserId()
+        );
+
+        Integer lc =
+                post.getLikeCount();
+
+        post.setLikeCount(
+                Math.max(
+                        0,
+                        (lc == null ? 0 : lc) - 1
+                )
+        );
     }
 
     // =========================================================
     // 6) 게시글 CRUD (공지 isNotice는 여기서 못 건드림)
     // =========================================================
-    @Transactional public Long createPost(PostCreateRequest request) {
-        User user = userService.getCurrentUser();
-        if (user == null) {
-            throw new UnauthorizedException("로그인이 필요합니다.");
-        }
-        Post post = new Post();
-        post.setTitle(request.title());
-        post.setContent(request.content());
-        post.setUser(user);
-        post.setCategory(
-                request.category() != null && !request.category().isBlank()
-                        ? request.category()
-                        : "INFO"
-        );
-        post.setIsNotice(false);
+    @Transactional
+    public Long createPost(
+            PostCreateRequest request
+    ) {
+        User user =
+                userService.getCurrentUser();
 
-        return postRepository.save(post).getPostId();
+        if (user == null) {
+            throw new UnauthorizedException(
+                    "로그인이 필요합니다."
+            );
+        }
+
+        Post post =
+                new Post();
+
+        post.setTitle(
+                request.title()
+        );
+        post.setContent(
+                request.content()
+        );
+        post.setUser(
+                user
+        );
+        post.setCategory(
+                normalizeCreateCategory(
+                        request.category()
+                )
+        );
+        post.setIsNotice(
+                false
+        );
+
+        return postRepository
+                .save(
+                        post
+                )
+                .getPostId();
     }
 
     @Transactional
@@ -499,24 +702,54 @@ public class PostService {
     }
 
     @Transactional
-    public PostResponse updatePost(Long postId, PostUpdateRequest request) {
-        Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
+    public void updatePost(
+            Long postId,
+            PostUpdateRequest request
+    ) {
+        Post post =
+                postRepository.findById(
+                                postId
+                        )
+                        .orElseThrow(() ->
+                                new NotFoundException(
+                                        "존재하지 않는 게시글입니다. id=" + postId
+                                )
+                        );
 
-        User user = userService.getCurrentUser();
-        if (user == null || !Objects.equals(post.getUser().getUserId(), user.getUserId())) {
-            throw new ForbiddenException("본인의 게시글만 수정할 수 있습니다.");
+        User user =
+                userService.getCurrentUser();
+
+        if (user == null
+                || !Objects.equals(
+                post.getUser().getUserId(),
+                user.getUserId()
+        )) {
+            throw new ForbiddenException(
+                    "본인의 게시글만 수정할 수 있습니다."
+            );
         }
 
-        post.setTitle(request.title());
-        post.setContent(request.content());
+        post.setTitle(
+                request.title()
+        );
+        post.setContent(
+                request.content()
+        );
 
-        // 공지글이 아닐 때만 카테고리 변경 허용 (보안/데이터 정합성)
-        if (!post.getIsNotice() && request.category() != null) {
-            post.setCategory(request.category());
+        /*
+         * 공지글은 일반 수정 API에서 카테고리를 바꾸지 않습니다.
+         * 일반 게시글은 NOTICE 카테고리를 사용할 수 없습니다.
+         */
+        if (!Boolean.TRUE.equals(
+                post.getIsNotice()
+        ) && request.category() != null) {
+
+            post.setCategory(
+                    normalizeUpdateCategory(
+                            request.category()
+                    )
+            );
         }
-
-        return PostResponse.from(post);
     }
 
     @Transactional
