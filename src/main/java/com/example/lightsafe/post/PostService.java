@@ -297,16 +297,51 @@ public class PostService {
     }
 
     @Transactional
-    public void updateComment(Long commentId, String content) {
-        Comment comment = commentRepository.findById(commentId)
-                .orElseThrow(() -> new NotFoundException("존재하지 않는 댓글입니다. id=" + commentId));
+    public void updateComment(
+            Long postId,
+            Long commentId,
+            CommentUpdateRequest request
+    ) {
+        postRepository.findById(postId)
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "존재하지 않는 게시글입니다. id=" + postId
+                        )
+                );
 
-        User user = userService.getCurrentUser();
-        if (user == null || !Objects.equals(comment.getUser().getUserId(), user.getUserId())) {
-            throw new ForbiddenException("본인의 댓글만 수정할 수 있습니다.");
+        Comment comment = commentRepository
+                .findById(commentId)
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "존재하지 않는 댓글입니다. id=" + commentId
+                        )
+                );
+
+        if (!Objects.equals(
+                comment.getPost().getPostId(),
+                postId
+        )) {
+            throw new BadRequestException(
+                    "해당 게시글의 댓글이 아닙니다."
+            );
         }
 
-        comment.setContent(content);
+        User user =
+                userService.getCurrentUser();
+
+        if (user == null
+                || !Objects.equals(
+                comment.getUser().getUserId(),
+                user.getUserId()
+        )) {
+            throw new ForbiddenException(
+                    "본인의 댓글만 수정할 수 있습니다."
+            );
+        }
+
+        comment.setContent(
+                request.content().trim()
+        );
     }
 
     @Transactional

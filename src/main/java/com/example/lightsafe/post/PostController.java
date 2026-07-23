@@ -160,10 +160,19 @@ public class PostController {
     public ResponseEntity<ApiResponse<Map<String, Long>>> updateComment(
             @PathVariable Long postId,
             @PathVariable Long commentId,
-            @RequestBody Map<String, String> body
+            @RequestBody @Valid CommentUpdateRequest request
     ) {
-        postService.updateComment(commentId, body.get("content"));
-        return ResponseEntity.ok(ApiResponse.ok(Map.of("commentId", commentId)));
+        postService.updateComment(
+                postId,
+                commentId,
+                request
+        );
+
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        Map.of("commentId", commentId)
+                )
+        );
     }
 
     // ✅ 댓글 삭제(대댓글 포함 삭제)
