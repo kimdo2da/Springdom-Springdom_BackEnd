@@ -67,9 +67,45 @@ public class UserService {
     public Long register(
             UserRegisterRequest request
     ) {
+        String username =
+                normalizeRequired(
+                        request.getUsername(),
+                        "아이디"
+                );
+
+        String email =
+                normalizeEmail(
+                        request.getEmail()
+                );
+
+        String nickname =
+                normalizeRequired(
+                        request.getNickname(),
+                        "닉네임"
+                );
+
+        String password =
+                request.getPassword();
+
+        if (password == null
+                || password.isBlank()) {
+
+            throw new BadRequestException(
+                    "비밀번호는 필수입니다."
+            );
+        }
+
+        if (password.length() < 8
+                || password.length() > 72) {
+
+            throw new BadRequestException(
+                    "비밀번호는 8자 이상 72자 이하여야 합니다."
+            );
+        }
+
         if (userRepository
                 .findByUsername(
-                        request.getUsername()
+                        username
                 )
                 .isPresent()) {
 
@@ -80,7 +116,7 @@ public class UserService {
 
         if (userRepository
                 .findByEmail(
-                        request.getEmail()
+                        email
                 )
                 .isPresent()) {
 
@@ -91,31 +127,41 @@ public class UserService {
 
         String encodedPassword =
                 passwordEncoder.encode(
-                        request.getPassword()
+                        password
                 );
 
         User newUser =
                 User.builder()
                         .username(
-                                request.getUsername()
+                                username
                         )
                         .email(
-                                request.getEmail()
+                                email
                         )
                         .password(
                                 encodedPassword
                         )
                         .nickname(
-                                request.getNickname()
+                                nickname
                         )
-                        .falseReportCount(0)
-                        .isBlacklisted(false)
-                        .role("USER")
-                        .deleted(false)
+                        .falseReportCount(
+                                0
+                        )
+                        .isBlacklisted(
+                                false
+                        )
+                        .role(
+                                "USER"
+                        )
+                        .deleted(
+                                false
+                        )
                         .build();
 
         return userRepository
-                .save(newUser)
+                .save(
+                        newUser
+                )
                 .getUserId();
     }
 
@@ -124,10 +170,16 @@ public class UserService {
     public Map<String, Object> login(
             UserLoginRequest request
     ) {
+        String usernameOrEmail =
+                normalizeLoginIdentifier(
+                        request.getUsernameOrEmail()
+                );
+
         User user =
                 userRepository
-                        .findByUsername(
-                                request.getUsernameOrEmail()
+                        .findByUsernameOrEmail(
+                                usernameOrEmail,
+                                usernameOrEmail
                         )
                         .orElseThrow(() ->
                                 new UnauthorizedException(
@@ -172,7 +224,83 @@ public class UserService {
                 user.getUsername()
         );
 
+        data.put(
+                "email",
+                user.getEmail()
+        );
+
+        data.put(
+                "nickname",
+                user.getNickname()
+        );
+
+        data.put(
+                "role",
+                user.getRole()
+        );
+
         return data;
+    }
+    private String normalizeRequired(
+            String value,
+            String fieldName
+    ) {
+        if (value == null
+                || value.trim().isBlank()) {
+
+            throw new BadRequestException(
+                    fieldName + "는 필수입니다."
+            );
+        }
+
+        return value.trim();
+    }
+
+
+    private String normalizeEmail(
+            String email
+    ) {
+        String normalizedEmail =
+                normalizeRequired(
+                        email,
+                        "이메일"
+                ).toLowerCase(
+                        Locale.ROOT
+                );
+
+        String emailRegex =
+                "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
+
+        if (!normalizedEmail.matches(
+                emailRegex
+        )) {
+            throw new BadRequestException(
+                    "올바른 이메일 형식이 아닙니다."
+            );
+        }
+
+        return normalizedEmail;
+    }
+
+
+    private String normalizeLoginIdentifier(
+            String usernameOrEmail
+    ) {
+        String normalized =
+                normalizeRequired(
+                        usernameOrEmail,
+                        "아이디 또는 이메일"
+                );
+
+        if (normalized.contains(
+                "@"
+        )) {
+            return normalized.toLowerCase(
+                    Locale.ROOT
+            );
+        }
+
+        return normalized;
     }
 
     // 3. 프로필 조회

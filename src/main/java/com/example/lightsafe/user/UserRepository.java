@@ -28,5 +28,10 @@ public interface UserRepository
 
     List<User> findAllByDeletedFalseOrderByUserIdAsc();
 
+    Optional<User> findByUsernameOrEmail(
+            String username,
+            String email
+    );
+
     long countByDeletedFalse();
 }
