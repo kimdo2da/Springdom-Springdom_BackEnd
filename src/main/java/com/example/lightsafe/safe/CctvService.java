@@ -1,6 +1,7 @@
 package com.example.lightsafe.safe;
 
 import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
@@ -12,6 +13,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+@Slf4j
 @Service
 public class CctvService {
 
@@ -19,54 +21,128 @@ public class CctvService {
 
     @PostConstruct
     public void initCctvData() {
-        System.out.println("⏳ 서버 시작 중... CCTV 데이터 파일을 1회 로딩합니다!");
+        log.info("서버 시작 중 CCTV 데이터 파일을 1회 로딩합니다.");
+
         Set<String> uniqueLocations = new HashSet<>();
 
         try {
-            ClassPathResource resource = new ClassPathResource("CCTV정보_서울특별시.csv");
-            BufferedReader br = new BufferedReader(new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8));
+            ClassPathResource resource =
+                    new ClassPathResource(
+                            "CCTV정보_서울특별시.csv"
+                    );
 
-            String line;
-            boolean isFirstLine = true;
+            try (BufferedReader br =
+                         new BufferedReader(
+                                 new InputStreamReader(
+                                         resource.getInputStream(),
+                                         StandardCharsets.UTF_8
+                                 )
+                         )) {
 
-            while ((line = br.readLine()) != null) {
-                if (isFirstLine) {
-                    isFirstLine = false;
-                    continue;
+                String line;
+                boolean isFirstLine = true;
+
+                while ((line = br.readLine()) != null) {
+                    if (isFirstLine) {
+                        isFirstLine = false;
+                        continue;
+                    }
+
+                    String[] columns =
+                            line.split(
+                                    ",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)"
+                            );
+
+                    if (columns.length < 14) {
+                        continue;
+                    }
+
+                    String roadAddr =
+                            columns[3]
+                                    .replace("\"", "")
+                                    .trim();
+
+                    String lotAddr =
+                            columns[4]
+                                    .replace("\"", "")
+                                    .trim();
+
+                    String address =
+                            roadAddr.isEmpty()
+                                    ? lotAddr
+                                    : roadAddr;
+
+                    String purpose =
+                            columns[5]
+                                    .replace("\"", "")
+                                    .trim();
+
+                    String latStr =
+                            columns[12]
+                                    .replace("\"", "")
+                                    .trim();
+
+                    String lngStr =
+                            columns[13]
+                                    .replace("\"", "")
+                                    .trim();
+
+                    if (latStr.isEmpty()
+                            || lngStr.isEmpty()
+                            || address.isEmpty()) {
+
+                        continue;
+                    }
+
+                    String locationKey =
+                            latStr + "_" + lngStr;
+
+                    if (!uniqueLocations.add(
+                            locationKey
+                    )) {
+                        continue;
+                    }
+
+                    CctvDto dto =
+                            new CctvDto();
+
+                    dto.setCctvId(
+                            (long) (cachedCctvList.size() + 1)
+                    );
+                    dto.setCctvName(
+                            address
+                    );
+                    dto.setLatitude(
+                            Double.parseDouble(
+                                    latStr
+                            )
+                    );
+                    dto.setLongitude(
+                            Double.parseDouble(
+                                    lngStr
+                            )
+                    );
+                    dto.setPurpose(
+                            purpose
+                    );
+
+                    cachedCctvList.add(
+                            dto
+                    );
                 }
-
-                String[] columns = line.split(",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)");
-                if (columns.length < 14) continue;
-
-                String roadAddr = columns[3].replace("\"", "").trim();
-                String lotAddr = columns[4].replace("\"", "").trim();
-                String address = roadAddr.isEmpty() ? lotAddr : roadAddr;
-
-                String purpose = columns[5].replace("\"", "").trim();
-                String latStr = columns[12].replace("\"", "").trim();
-                String lngStr = columns[13].replace("\"", "").trim();
-
-                if (latStr.isEmpty() || lngStr.isEmpty() || address.isEmpty()) continue;
-
-                // 위치 중복 제거 로직
-                String locationKey = latStr + "_" + lngStr;
-                if (!uniqueLocations.add(locationKey)) continue;
-
-                CctvDto dto = new CctvDto();
-                dto.setCctvId((long) (cachedCctvList.size() + 1));
-                dto.setCctvName(address);
-                dto.setLatitude(Double.parseDouble(latStr));
-                dto.setLongitude(Double.parseDouble(lngStr));
-                dto.setPurpose(purpose);
-
-                cachedCctvList.add(dto);
             }
-            br.close();
+
         } catch (Exception e) {
-            System.err.println("🚨 CSV 파일 읽기 중 오류 발생!");
+            log.error(
+                    "CSV 파일 읽기 중 오류가 발생했습니다.",
+                    e
+            );
         }
 
-        System.out.println("✅ CCTV 데이터 로딩 완료! 총 " + cachedCctvList.size() + "개의 위치가 메모리에 장착되었습니다.");
+        log.info(
+                "CCTV 데이터 로딩 완료. 총 {}개의 위치가 메모리에 장착되었습니다.",
+                cachedCctvList.size()
+        );
     }
 
     public List<CctvDto> getCctvData() {
