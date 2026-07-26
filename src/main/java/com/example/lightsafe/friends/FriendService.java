@@ -86,19 +86,69 @@ public class FriendService {
      */
     public void sendFriendRequest(Long loginUserId, Long targetUserId) {
         if (loginUserId.equals(targetUserId)) {
-            throw new BadRequestException("자기 자신에게 친구 요청을 보낼 수 없습니다.");
+            throw new BadRequestException(
+                    "자기 자신에게 친구 요청을 보낼 수 없습니다."
+            );
         }
 
         User sender = userRepository.findById(loginUserId)
-                .orElseThrow(() -> new NotFoundException("존재하지 않는 발신 유저입니다."));
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "존재하지 않는 발신 유저입니다."
+                        )
+                );
+
         User receiver = userRepository.findById(targetUserId)
-                .orElseThrow(() -> new NotFoundException("존재하지 않는 수신 유저입니다."));
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "존재하지 않는 수신 유저입니다."
+                        )
+                );
 
-        Optional<Friend> existing1 = friendRepository.findByUserAndFriendUser(sender, receiver);
-        Optional<Friend> existing2 = friendRepository.findByUserAndFriendUser(receiver, sender);
+        Optional<Friend> existing1 =
+                friendRepository.findByUserAndFriendUser(
+                        sender,
+                        receiver
+                );
 
-        if (existing1.isPresent() || existing2.isPresent()) {
-            throw new ConflictException("이미 친구이거나 처리 중인 요청이 존재합니다.");
+        Optional<Friend> existing2 =
+                friendRepository.findByUserAndFriendUser(
+                        receiver,
+                        sender
+                );
+
+        List<Friend> existingRelations = new ArrayList<>();
+
+        existing1.ifPresent(existingRelations::add);
+        existing2.ifPresent(existingRelations::add);
+
+        List<Friend> rejectedRelations = new ArrayList<>();
+
+        for (Friend relation : existingRelations) {
+            if (relation.getStatus() == FriendStatus.ACCEPTED) {
+                throw new ConflictException(
+                        "이미 친구 관계입니다."
+                );
+            }
+
+            if (relation.getStatus() == FriendStatus.PENDING) {
+                throw new ConflictException(
+                        "이미 처리 중인 친구 요청이 존재합니다."
+                );
+            }
+
+            if (relation.getStatus() == FriendStatus.REJECTED) {
+                rejectedRelations.add(relation);
+            }
+        }
+
+        /*
+         * 거절된 요청은 다시 요청할 수 있도록
+         * 기존 REJECTED row를 제거한 뒤 새 PENDING 요청을 생성합니다.
+         */
+        if (!rejectedRelations.isEmpty()) {
+            friendRepository.deleteAll(rejectedRelations);
+            friendRepository.flush();
         }
 
         Friend friendRequest = Friend.builder()

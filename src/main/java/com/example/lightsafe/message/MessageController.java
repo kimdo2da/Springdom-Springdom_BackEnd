@@ -1,8 +1,6 @@
 package com.example.lightsafe.message;
 
 import com.example.lightsafe.common.response.ApiResponse;
-import com.example.lightsafe.friends.FriendMessageDto;
-import com.example.lightsafe.friends.FriendService;
 import com.example.lightsafe.user.CurrentUserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +17,6 @@ public class MessageController {
 
     private final MessageService messageService;
     private final CurrentUserService currentUserService;
-    private final FriendService friendService;
 
     @PostMapping("/{receiverId}")
     public ApiResponse<Object> sendMessage(
@@ -31,11 +28,6 @@ public class MessageController {
     ) {
         Long loginUserId =
                 currentUserService.getCurrentUserId();
-
-        friendService.validateFriendship(
-                receiverId,
-                loginUserId
-        );
 
         messageService.sendMessage(
                 loginUserId,
