@@ -35,7 +35,9 @@ public class PostAttachmentService {
                                         + attachmentId
                         )
                 );
+
         User user = userService.getCurrentUser();
+
         if (user == null
                 || !Objects.equals(
                 attachment.getPost()
@@ -49,11 +51,12 @@ public class PostAttachmentService {
             );
         }
 
-        try {
-            java.nio.file.Files.deleteIfExists(fileStorageService.load(attachment.getStoredFilename()));
-        } catch (Exception ignored) {
-        }
+        fileStorageService.deleteStoredFile(
+                attachment.getStoredFilename()
+        );
 
-        postAttachmentRepository.deleteById(attachmentId);
+        postAttachmentRepository.deleteById(
+                attachmentId
+        );
     }
 }

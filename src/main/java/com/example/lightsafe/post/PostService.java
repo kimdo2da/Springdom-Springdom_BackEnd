@@ -11,6 +11,8 @@ import com.example.lightsafe.common.exception.BadRequestException;
 import com.example.lightsafe.common.exception.ForbiddenException;
 import com.example.lightsafe.common.exception.NotFoundException;
 import com.example.lightsafe.common.exception.UnauthorizedException;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -820,15 +822,25 @@ public class PostService {
         }
     }
 
-    private void deleteAttachmentsByPostId(Long postId) {
-        List<PostAttachment> attachments = postAttachmentRepository.findByPostPostIdOrderByCreatedAtAsc(postId);
+    private void deleteAttachmentsByPostId(
+            Long postId
+    ) {
+        List<PostAttachment> attachments =
+                postAttachmentRepository
+                        .findByPostPostIdOrderByCreatedAtAsc(
+                                postId
+                        );
+
         for (PostAttachment attachment : attachments) {
-            try {
-                java.nio.file.Files.deleteIfExists(fileStorageService.load(attachment.getStoredFilename()));
-            } catch (Exception ignored) {
-            }
+            fileStorageService.deleteStoredFile(
+                    attachment.getStoredFilename()
+            );
         }
-        postAttachmentRepository.deleteByPostPostId(postId);
+
+        postAttachmentRepository
+                .deleteByPostPostId(
+                        postId
+                );
     }
 
     // =========================================================
@@ -944,39 +956,105 @@ public class PostService {
             Post post,
             List<MultipartFile> files
     ) {
-        if (files == null || files.isEmpty()) {
+        if (files == null
+                || files.isEmpty()) {
+
             return;
         }
 
-        for (MultipartFile file : files) {
-            if (file == null || file.isEmpty()) {
-                continue;
+        List<String> storedFilenames =
+                new ArrayList<>();
+
+        registerRollbackFileCleanup(
+                storedFilenames
+        );
+
+        try {
+            for (MultipartFile file : files) {
+                if (file == null
+                        || file.isEmpty()) {
+
+                    continue;
+                }
+
+                FileStorageService.StoredFile stored =
+                        fileStorageService.store(
+                                file
+                        );
+
+                storedFilenames.add(
+                        stored.storedFilename()
+                );
+
+                PostAttachment attachment =
+                        new PostAttachment();
+
+                attachment.setPost(
+                        post
+                );
+                attachment.setOriginalFilename(
+                        stored.originalFilename()
+                );
+                attachment.setStoredFilename(
+                        stored.storedFilename()
+                );
+                attachment.setContentType(
+                        stored.contentType()
+                );
+                attachment.setFileSize(
+                        stored.size()
+                );
+
+                postAttachmentRepository.save(
+                        attachment
+                );
             }
 
-            FileStorageService.StoredFile stored =
-                    fileStorageService.store(file);
+        } catch (RuntimeException e) {
+            if (!TransactionSynchronizationManager
+                    .isSynchronizationActive()) {
 
-            PostAttachment attachment =
-                    new PostAttachment();
+                cleanupStoredFiles(
+                        storedFilenames
+                );
+            }
 
-            attachment.setPost(
-                    post
-            );
-            attachment.setOriginalFilename(
-                    stored.originalFilename()
-            );
-            attachment.setStoredFilename(
-                    stored.storedFilename()
-            );
-            attachment.setContentType(
-                    stored.contentType()
-            );
-            attachment.setFileSize(
-                    stored.size()
-            );
+            throw e;
+        }
+    }
+    private void registerRollbackFileCleanup(
+            List<String> storedFilenames
+    ) {
+        if (!TransactionSynchronizationManager
+                .isSynchronizationActive()) {
 
-            postAttachmentRepository.save(
-                    attachment
+            return;
+        }
+
+        TransactionSynchronizationManager
+                .registerSynchronization(
+                        new TransactionSynchronization() {
+                            @Override
+                            public void afterCompletion(
+                                    int status
+                            ) {
+                                if (status == STATUS_ROLLED_BACK) {
+                                    cleanupStoredFiles(
+                                            storedFilenames
+                                    );
+                                }
+                            }
+                        }
+                );
+    }
+
+
+    private void cleanupStoredFiles(
+            List<String> storedFilenames
+    ) {
+        for (String storedFilename : storedFilenames) {
+            fileStorageService.deleteStoredFile(
+                    storedFilename
             );
         }
     }
