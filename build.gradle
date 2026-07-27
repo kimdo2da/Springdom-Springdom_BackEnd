@@ -19,99 +19,36 @@ repositories {
 }
 
 dependencies {
-//<<<<<<< HEAD
-	  //implementation 'org.springframework.boot:spring-boot-starter-session-jdbc'
-	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
-	  //testImplementation 'org.springframework.boot:spring-boot-starter-session-jdbc-test'
-	// =======
-	//<<<<<<< HEAD
-	// =========================
-	// 기본 Web
-	// =========================
+	// Web
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 
-	// =========================
 	// DB / JPA
-	// =========================
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	runtimeOnly 'com.mysql:mysql-connector-j'
 
-	// =========================
 	// Validation
-	// @Valid, @NotBlank, @NotNull 사용
-	// =========================
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 
-	// =========================
-	// Lombok
-	// @Getter, @Setter, @NoArgsConstructor 등
-	// =========================
-	compileOnly 'org.projectlombok:lombok'
-	annotationProcessor 'org.projectlombok:lombok'
-
-	// =========================
 	// Security
-	// 로그인/JWT/권한 처리할 때 사용
-	// 지금 당장 Security 설정 없으면 주석 유지 추천
-	// =========================
-	// implementation 'org.springframework.boot:spring-boot-starter-security'
-
-	// =========================
-	// Session JDBC
-	// 세션 로그인 방식으로 갈 때 사용
-	// JWT 방식이면 보통 필요 없음
-	// 지금은 주석 유지 추천
-	// =========================
-	// implementation 'org.springframework.boot:spring-boot-starter-session-jdbc'
-	// testImplementation 'org.springframework.boot:spring-boot-starter-session-jdbc-test'
-
-	// =========================
-	// Swagger / OpenAPI
-	// API 문서 자동화할 때 사용
-	// Spring Boot 4에서 호환 문제 나면 나중에 버전 확인 필요
-	// =========================
-	// implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.4'
-
-	// =========================
-	// Test
-	// =========================
-//>>>>>>> develop
-	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
-	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
-	//=======
-	// ⭐️ 웹 (API) 구동을 위한 필수 부품
-	implementation 'org.springframework.boot:spring-boot-starter-web'
-
-	// ⭐️ JPA: 자바 코드와 DB 테이블을 연결
-	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-
-	// ⭐️ MySQL 데이터베이스 연결 드라이버 (이게 있어야 DB에 붙습니다!)
-	runtimeOnly 'com.mysql:mysql-connector-j'
-
-	// ⭐️ 스프링 시큐리티 (비밀번호 암호화 및 보안 담당)
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 
-	// ⭐️ JWT 토큰 관련 라이브러리
+	// JWT
 	implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
 	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
 
-	// ⭐️ 롬복 (코드 간략화)
+	// Jackson
+	implementation 'com.fasterxml.jackson.core:jackson-databind'
+
+	// Lombok
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 
-	// 테스트용 부품들
+	// Test
+	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
-	//>>>>>>> develop
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-//<<<<<< HEAD
-	implementation 'com.fasterxml.jackson.core:jackson-databind'
-	compileOnly 'org.projectlombok:lombok'
-	annotationProcessor 'org.projectlombok:lombok'
-//=======
-	//이거 추가 긴급신고
-	implementation 'org.springframework.boot:spring-boot-starter-validation'
-//>>>>>>> develop
 }
 
 tasks.named('test') {
