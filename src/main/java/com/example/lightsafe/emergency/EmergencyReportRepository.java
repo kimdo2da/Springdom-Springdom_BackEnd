@@ -1,34 +1,44 @@
 package com.example.lightsafe.emergency;
 
-import org.springframework.data.jpa.repository.EntityGraph;
-import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.List;
 import java.time.LocalDateTime;
+import java.util.List;
 
-public interface EmergencyReportRepository extends JpaRepository<EmergencyReport, Long> {
+public interface EmergencyReportRepository
+        extends JpaRepository<EmergencyReport, Long> {
 
-    @EntityGraph(attributePaths = {"user", "dangerZone", "nearestCctv"})
-    List<EmergencyReport> findByUserUserIdOrderByReportedAtDesc(Long userId);
+    @EntityGraph(
+            attributePaths = {
+                    "user",
+                    "dangerZone",
+                    "nearestCctv"
+            }
+    )
+    List<EmergencyReport> findByUser_UserIdOrderByReportedAtDesc(
+            Long userId
+    );
 
-    @EntityGraph(attributePaths = {"user", "dangerZone", "nearestCctv"})
-    List<EmergencyReport> findByDangerZoneDangerZoneIdOrderByReportedAtDesc(Long dangerZoneId);
+    @EntityGraph(
+            attributePaths = {
+                    "user",
+                    "dangerZone",
+                    "nearestCctv"
+            }
+    )
+    List<EmergencyReport> findByDangerZone_DangerZoneIdOrderByReportedAtDesc(
+            Long dangerZoneId
+    );
 
-    long countByDangerZoneDangerZoneIdAndIsFalseReportFalse(Long dangerZoneId);
+    long countByDangerZone_DangerZoneIdAndIsFalseReportFalse(
+            Long dangerZoneId
+    );
 
-    // 특정 유저가 신고한 내역을 신고일 기준 내림차순(최신순)으로 조회
-    List<EmergencyReport> findByUser_UserIdOrderByReportedAtDesc(Long userId);
-
-    /*
-     * 관리자용 전체 긴급신고 이력 조회
-     *
-     * dangerZone.isActive를 조건으로 사용하지 않으므로
-     * 활성·비활성 위험구역의 신고를 모두 조회합니다.
-     */
     @Query(
             value = """
                     SELECT report
@@ -72,7 +82,7 @@ public interface EmergencyReportRepository extends JpaRepository<EmergencyReport
     )
     Page<EmergencyReport> findAdminEmergencyReports(
             @Param("status")
-            String status,
+            EmergencyReportStatus status,
 
             @Param("isFalseReport")
             Boolean isFalseReport,

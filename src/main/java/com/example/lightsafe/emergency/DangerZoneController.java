@@ -13,11 +13,11 @@ import java.util.List;
 public class DangerZoneController {
 
     private final DangerZoneService dangerZoneService;
-    private final EmergencyReportService2 emergencyReportService;
+    private final EmergencyReportService emergencyReportService;
 
     public DangerZoneController(
             DangerZoneService dangerZoneService,
-            EmergencyReportService2 emergencyReportService
+            EmergencyReportService emergencyReportService
     ) {
         this.dangerZoneService = dangerZoneService;
         this.emergencyReportService = emergencyReportService;

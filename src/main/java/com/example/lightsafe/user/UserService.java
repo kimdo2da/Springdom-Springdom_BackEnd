@@ -455,19 +455,23 @@ public class UserService {
         }
 
         // 실제 EmergencyReport DB에서 내 신고 내역 최신순으로 조회
-        List<EmergencyReport> myReports = emergencyReportRepository.findByUserUserIdOrderByReportedAtDesc(loginUserId);
+        List<EmergencyReport> myReports =
+                emergencyReportRepository
+                        .findByUser_UserIdOrderByReportedAtDesc(
+                                loginUserId
+                        );
 
         List<Map<String, Object>> data = new ArrayList<>();
+
         for (EmergencyReport report : myReports) {
             Map<String, Object> map = new HashMap<>();
+
             map.put("reportId", report.getReportId());
-            map.put("reportStatus", report.getReportStatus());
+            map.put("reportStatus", report.getReportStatus().name());
             map.put("description", report.getDescription());
-
-            // 주의: 엔티티의 boolean Getter 이름(isFalseReport() 또는 getIsFalseReport())에 맞춰 수정하세요!
             map.put("isFalseReport", report.getIsFalseReport());
-
             map.put("reportedAt", report.getReportedAt());
+
             data.add(map);
         }
         return data;

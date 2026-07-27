@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.lightsafe.emergency.EmergencyReportStatus;
 
 import java.time.LocalDateTime;
 import java.util.Locale;
@@ -19,13 +20,6 @@ import java.util.Set;
 public class AdminEmergencyReportService {
 
     private static final int MAX_PAGE_SIZE = 100;
-
-    private static final Set<String> ALLOWED_STATUSES =
-            Set.of(
-                    "RECEIVED",
-                    "RESOLVED",
-                    "FALSE"
-            );
 
     private final EmergencyReportRepository
             emergencyReportRepository;
@@ -44,7 +38,7 @@ public class AdminEmergencyReportService {
         validateIds(dangerZoneId, reporterId);
         validateDateRange(startDate, endDate);
 
-        String normalizedStatus =
+        EmergencyReportStatus normalizedStatus =
                 normalizeStatus(status);
 
         PageRequest pageable =
@@ -129,7 +123,7 @@ public class AdminEmergencyReportService {
         }
     }
 
-    private String normalizeStatus(
+    private EmergencyReportStatus normalizeStatus(
             String status
     ) {
         if (status == null
@@ -138,19 +132,16 @@ public class AdminEmergencyReportService {
             return null;
         }
 
-        String normalizedStatus =
-                status
-                        .trim()
-                        .toUpperCase(Locale.ROOT);
-
-        if (!ALLOWED_STATUSES.contains(
-                normalizedStatus
-        )) {
+        try {
+            return EmergencyReportStatus.valueOf(
+                    status
+                            .trim()
+                            .toUpperCase(Locale.ROOT)
+            );
+        } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(
                     "status는 RECEIVED, RESOLVED, FALSE 중 하나여야 합니다."
             );
         }
-
-        return normalizedStatus;
     }
 }

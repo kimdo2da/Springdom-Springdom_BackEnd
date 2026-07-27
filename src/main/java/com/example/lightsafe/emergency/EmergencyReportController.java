@@ -12,9 +12,9 @@ import java.util.List;
 @RequestMapping("/emergency-reports")
 public class EmergencyReportController {
 
-    private final EmergencyReportService2 emergencyReportService;
+    private final EmergencyReportService emergencyReportService;
 
-    public EmergencyReportController(EmergencyReportService2 emergencyReportService) {
+    public EmergencyReportController(EmergencyReportService emergencyReportService) {
         this.emergencyReportService = emergencyReportService;
     }
 

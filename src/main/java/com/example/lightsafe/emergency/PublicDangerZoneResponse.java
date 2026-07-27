@@ -24,7 +24,7 @@ public record PublicDangerZoneResponse(
                 toPublicCoordinate(zone.getCenterLatitude()),
                 toPublicCoordinate(zone.getCenterLongitude()),
                 zone.getRadius(),
-                zone.getDangerLevel(),
+                zone.getDangerLevel().name(),
                 zone.getReportCount(),
                 zone.getIsActive(),
                 zone.getCreatedAt(),

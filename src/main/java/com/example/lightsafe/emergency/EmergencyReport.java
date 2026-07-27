@@ -28,8 +28,9 @@ public class EmergencyReport {
     @Column(name = "longitude", nullable = false, precision = 10, scale = 7)
     private BigDecimal longitude;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "report_status", nullable = false, length = 20)
-    private String reportStatus = "RECEIVED";
+    private EmergencyReportStatus reportStatus = EmergencyReportStatus.RECEIVED;
 
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;

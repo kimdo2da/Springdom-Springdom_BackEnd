@@ -19,7 +19,7 @@ public record DangerZoneResponse(
                 zone.getCenterLatitude().doubleValue(),
                 zone.getCenterLongitude().doubleValue(),
                 zone.getRadius(),
-                zone.getDangerLevel(),
+                zone.getDangerLevel().name(),
                 zone.getReportCount(),
                 zone.getIsActive(),
                 zone.getCreatedAt(),

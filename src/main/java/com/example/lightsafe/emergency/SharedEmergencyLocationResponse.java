@@ -25,9 +25,9 @@ public record SharedEmergencyLocationResponse(
                 report.getLatitude().doubleValue(),
                 report.getLongitude().doubleValue(),
                 report.getDescription(),
-                report.getReportStatus(),
+                report.getReportStatus().name(),
                 report.getDangerZone().getDangerZoneId(),
-                report.getDangerZone().getDangerLevel(),
+                report.getDangerZone().getDangerLevel().name(),
                 report.getReportedAt()
         );
     }
