@@ -40,7 +40,7 @@ public class RouteController {
         return ResponseEntity.ok(
                 ApiResponse.ok(
                         routeList,
-                        "안전 경로 3개 탐색 완료"
+                        "안전 경로 " + routeList.size() + "개 탐색 완료"
                 )
         );
     }
