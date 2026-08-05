@@ -1,12 +1,14 @@
 package com.example.lightsafe.friends;
 
-import com.example.lightsafe.message.MessageService;
-import com.example.lightsafe.user.JwtUtil;
-import com.example.lightsafe.user.ApiResponse;
+import com.example.lightsafe.common.response.ApiResponse;
+import com.example.lightsafe.user.CurrentUserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
@@ -14,149 +16,165 @@ import java.util.*;
 public class FriendController {
 
     private final FriendService friendService;
-    private final JwtUtil jwtUtil;
-    private final MessageService messageService;
+    private final CurrentUserService currentUserService;
 
-    // 1. 친구 목록 조회 - GET /friends
-    @GetMapping("")
-    public ApiResponse<Object> getFriendList(@RequestHeader("Authorization") String token) {
-        Long loginUserId = extractUserId(token);
-        try {
-            List<Map<String, Object>> data = friendService.getFriendList(loginUserId);
-            return new ApiResponse<>(true, data, "전체 친구 목록 조회 성공");
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(false, "NOT_FOUND", e.getMessage());
-        }
+    @GetMapping
+    public ApiResponse<Object> getFriendList() {
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
+
+        List<Map<String, Object>> data =
+                friendService.getFriendList(
+                        loginUserId
+                );
+
+        return ApiResponse.ok(
+                data,
+                "전체 친구 목록 조회 성공"
+        );
     }
 
-    // 2. 친구 요청 보내기 - POST /friends/requests
     @PostMapping("/requests")
     public ApiResponse<Object> sendFriendRequest(
-            @RequestBody FriendRequestDto requestDto,
-            @RequestHeader("Authorization") String token) {
+            @RequestBody
+            @Valid
+            FriendRequestDto requestDto
+    ) {
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
 
-        Long loginUserId = extractUserId(token);
-        try {
-            friendService.sendFriendRequest(loginUserId, requestDto.getTargetUserId());
-            return new ApiResponse<>(true, Collections.emptyMap(), "친구 요청 전송 성공");
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(false, "BAD_REQUEST", e.getMessage());
-        } catch (IllegalStateException e) {
-            return new ApiResponse<>(false, "CONFLICT", e.getMessage());
-        }
+        friendService.sendFriendRequest(
+                loginUserId,
+                requestDto.getTargetUserId()
+        );
+
+        return ApiResponse.ok(
+                Collections.emptyMap(),
+                "친구 요청 전송 성공"
+        );
     }
 
-    // 3. 받은 요청 조회 - GET /friends/requests/received
     @GetMapping("/requests/received")
-    public ApiResponse<Object> getReceivedRequests(@RequestHeader("Authorization") String token) {
-        Long loginUserId = extractUserId(token);
-        try {
-            List<Map<String, Object>> data = friendService.getReceivedRequests(loginUserId);
-            return new ApiResponse<>(true, data, "받은 요청 목록 조회 성공");
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(false, "NOT_FOUND", e.getMessage());
-        }
+    public ApiResponse<Object> getReceivedRequests() {
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
+
+        return ApiResponse.ok(
+                friendService.getReceivedRequests(
+                        loginUserId
+                ),
+                "받은 요청 목록 조회 성공"
+        );
     }
 
-    // 4. 보낸 요청 조회 - GET /friends/requests/sent
     @GetMapping("/requests/sent")
-    public ApiResponse<Object> getSentRequests(@RequestHeader("Authorization") String token) {
-        Long loginUserId = extractUserId(token);
-        try {
-            List<Map<String, Object>> data = friendService.getSentRequests(loginUserId);
-            return new ApiResponse<>(true, data, "보낸 요청 목록 조회 성공");
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(false, "NOT_FOUND", e.getMessage());
-        }
+    public ApiResponse<Object> getSentRequests() {
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
+
+        return ApiResponse.ok(
+                friendService.getSentRequests(
+                        loginUserId
+                ),
+                "보낸 요청 목록 조회 성공"
+        );
     }
 
-    // 5. 친구 수락 - PUT /friends/requests/{request_id}/accept
     @PutMapping("/requests/{request_id}/accept")
     public ApiResponse<Object> acceptFriendRequest(
-            @PathVariable("request_id") Long requestId,
-            @RequestHeader("Authorization") String token) {
+            @PathVariable("request_id")
+            Long requestId
+    ) {
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
 
-        Long loginUserId = extractUserId(token);
-        try {
-            friendService.acceptFriendRequest(requestId, loginUserId);
-            return new ApiResponse<>(true, Collections.emptyMap(), "친구 수락 성공");
-        } catch (SecurityException e) {
-            return new ApiResponse<>(false, "FORBIDDEN", e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(false, "BAD_REQUEST", e.getMessage());
-        }
+        friendService.acceptFriendRequest(
+                requestId,
+                loginUserId
+        );
+
+        return ApiResponse.ok(
+                Collections.emptyMap(),
+                "친구 수락 성공"
+        );
     }
 
-    // 6. 요청 거절 - PUT /friends/requests/{request_id}/reject
     @PutMapping("/requests/{request_id}/reject")
     public ApiResponse<Object> rejectFriendRequest(
-            @PathVariable("request_id") Long requestId,
-            @RequestHeader("Authorization") String token) {
+            @PathVariable("request_id")
+            Long requestId
+    ) {
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
 
-        Long loginUserId = extractUserId(token);
-        try {
-            friendService.rejectFriendRequest(requestId, loginUserId);
-            return new ApiResponse<>(true, Collections.emptyMap(), "친구 요청 거절 성공");
-        } catch (SecurityException e) {
-            return new ApiResponse<>(false, "FORBIDDEN", e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(false, "BAD_REQUEST", e.getMessage());
-        }
+        friendService.rejectFriendRequest(
+                requestId,
+                loginUserId
+        );
+
+        return ApiResponse.ok(
+                Collections.emptyMap(),
+                "친구 요청 거절 성공"
+        );
     }
 
-    // 7. 요청 취소 (보낸 사람이 취소) - DELETE /friends/requests/{request_id}
     @DeleteMapping("/requests/{request_id}")
     public ApiResponse<Object> cancelFriendRequest(
-            @PathVariable("request_id") Long requestId,
-            @RequestHeader("Authorization") String token) {
+            @PathVariable("request_id")
+            Long requestId
+    ) {
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
 
-        Long loginUserId = extractUserId(token);
-        try {
-            friendService.cancelFriendRequest(requestId, loginUserId);
-            return new ApiResponse<>(true, Collections.emptyMap(), "친구 요청 취소 성공");
-        } catch (SecurityException e) {
-            return new ApiResponse<>(false, "FORBIDDEN", e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(false, "BAD_REQUEST", e.getMessage());
-        }
+        friendService.cancelFriendRequest(
+                requestId,
+                loginUserId
+        );
+
+        return ApiResponse.ok(
+                Collections.emptyMap(),
+                "친구 요청 취소 성공"
+        );
     }
 
-    // 8. 친구 삭제 - DELETE /friends/{user_id}
     @DeleteMapping("/{user_id}")
     public ApiResponse<Object> deleteFriend(
-            @PathVariable("user_id") Long targetUserId,
-            @RequestHeader("Authorization") String token) {
+            @PathVariable("user_id")
+            Long targetUserId
+    ) {
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
 
-        Long loginUserId = extractUserId(token);
-        try {
-            friendService.deleteFriend(targetUserId, loginUserId);
-            return new ApiResponse<>(true, Collections.emptyMap(), "친구 삭제 성공");
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(false, "BAD_REQUEST", e.getMessage());
-        }
+        friendService.deleteFriend(
+                targetUserId,
+                loginUserId
+        );
+
+        return ApiResponse.ok(
+                Collections.emptyMap(),
+                "친구 삭제 성공"
+        );
     }
 
-
-    // 10. 긴급 위치 공유 허용 여부 변경 - PUT /friends/{friends_id}/emergency-allow
     @PutMapping("/{friends_id}/emergency-allow")
-    public ApiResponse<Object> toggleEmergencyAllow(
-            @PathVariable("friends_id") Long friendsId,
-            @RequestHeader("Authorization") String token) {
+    public ApiResponse<Object> setEmergencyAllow(
+            @PathVariable("friends_id")
+            Long friendsId,
 
-        Long loginUserId = extractUserId(token);
-        try {
-            String statusMsg = friendService.toggleEmergencyAllow(friendsId, loginUserId);
-            return new ApiResponse<>(true, Collections.emptyMap(), "긴급 설정 변경 성공 (" + statusMsg + ")");
-        } catch (SecurityException e) {
-            return new ApiResponse<>(false, "FORBIDDEN", e.getMessage());
-        } catch (IllegalArgumentException e) {
-            return new ApiResponse<>(false, "BAD_REQUEST", e.getMessage());
-        }
-    }
+            @RequestBody
+            @Valid
+            EmergencyAllowUpdateRequest request
+    ) {
+        Long loginUserId =
+                currentUserService.getCurrentUserId();
 
-    // 공통 유틸 메서드: 토큰에서 회원 ID 추출
-    private Long extractUserId(String token) {
-        String jwt = token.startsWith("Bearer ") ? token.substring(7) : token;
-        return jwtUtil.getUserIdFromToken(jwt);
+        return ApiResponse.ok(
+                friendService.setEmergencyAllow(
+                        friendsId,
+                        loginUserId,
+                        request.getIsEmergencyAllowed()
+                ),
+                "긴급 위치 공유 설정 변경 성공"
+        );
     }
 }

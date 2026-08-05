@@ -5,8 +5,12 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.time.LocalDateTime;
 
 @Repository
 public interface PostRepository extends JpaRepository<Post, Long> {
@@ -32,4 +36,44 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 
     // 특정 유저가 쓴 글을 작성일 기준 내림차순(최신순)으로 조회
     List<Post> findByUser_UserIdOrderByCreatedAtDesc(Long userId);
+
+    // 시작 시각 이상, 종료 시각 미만에 작성된 전체 게시글 수
+    long countByCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+            LocalDateTime startDateTime,
+            LocalDateTime endDateTime
+    );
+    @Modifying(
+            flushAutomatically = true,
+            clearAutomatically = true
+    )
+    @Query("""
+        UPDATE Post post
+           SET post.title = :deletedTitle,
+               post.content = :deletedContent
+         WHERE post.user.userId = :userId
+        """)
+    int anonymizePostsByUserId(
+            @Param("userId")
+            Long userId,
+
+            @Param("deletedTitle")
+            String deletedTitle,
+
+            @Param("deletedContent")
+            String deletedContent
+    );
+
+    @Modifying(flushAutomatically = true)
+    @Query("""
+        UPDATE Post post
+           SET post.likeCount = :likeCount
+         WHERE post.postId = :postId
+        """)
+    int updateLikeCount(
+            @Param("postId")
+            Long postId,
+
+            @Param("likeCount")
+            int likeCount
+    );
 }

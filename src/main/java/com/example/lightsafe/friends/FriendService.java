@@ -5,6 +5,11 @@ import com.example.lightsafe.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.lightsafe.common.exception.BadRequestException;
+import com.example.lightsafe.common.exception.ConflictException;
+import com.example.lightsafe.common.exception.ForbiddenException;
+import com.example.lightsafe.common.exception.NotFoundException;
+
 
 import java.util.*;
 
@@ -23,7 +28,7 @@ public class FriendService {
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getFriendList(Long loginUserId) {
         User me = userRepository.findById(loginUserId)
-                .orElseThrow(() -> new IllegalArgumentException("유저를 찾을 수 없습니다."));
+                .orElseThrow(() -> new NotFoundException("유저를 찾을 수 없습니다."));
 
         List<Friend> myRequests = friendRepository.findByUserAndStatus(me, FriendStatus.ACCEPTED);
         List<Friend> receivedRequests = friendRepository.findByFriendUserAndStatus(me, FriendStatus.ACCEPTED);
@@ -36,7 +41,17 @@ public class FriendService {
             map.put("friendsId", f.getFriendsId());
             map.put("friendUserId", f.getFriendUser().getUserId());
             map.put("friendNickname", f.getFriendUser().getNickname());
-            map.put("isEmergencyAllowed", f.isEmergencyAllowed());
+            // 내가 상대방에게 내 긴급 위치를 공유하는지
+            map.put(
+                    "isEmergencyAllowed",
+                    f.isUserEmergencyAllowed()
+            );
+
+            // 상대방이 나에게 자기 긴급 위치를 공유하는지
+            map.put(
+                    "isEmergencyAllowedByFriend",
+                    f.isFriendUserEmergencyAllowed()
+            );
             map.put("becameFriendAt", f.getCreatedAt());
             data.add(map);
         }
@@ -47,7 +62,17 @@ public class FriendService {
             map.put("friendsId", f.getFriendsId());
             map.put("friendUserId", f.getUser().getUserId());
             map.put("friendNickname", f.getUser().getNickname());
-            map.put("isEmergencyAllowed", f.isEmergencyAllowed());
+            // 내가 상대방에게 내 긴급 위치를 공유하는지
+            map.put(
+                    "isEmergencyAllowed",
+                    f.isFriendUserEmergencyAllowed()
+            );
+
+            // 상대방이 나에게 자기 긴급 위치를 공유하는지
+            map.put(
+                    "isEmergencyAllowedByFriend",
+                    f.isUserEmergencyAllowed()
+            );
             map.put("becameFriendAt", f.getCreatedAt());
             data.add(map);
         }
@@ -61,26 +86,77 @@ public class FriendService {
      */
     public void sendFriendRequest(Long loginUserId, Long targetUserId) {
         if (loginUserId.equals(targetUserId)) {
-            throw new IllegalArgumentException("자기 자신에게 친구 요청을 보낼 수 없습니다.");
+            throw new BadRequestException(
+                    "자기 자신에게 친구 요청을 보낼 수 없습니다."
+            );
         }
 
         User sender = userRepository.findById(loginUserId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 발신 유저입니다."));
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "존재하지 않는 발신 유저입니다."
+                        )
+                );
+
         User receiver = userRepository.findById(targetUserId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 수신 유저입니다."));
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "존재하지 않는 수신 유저입니다."
+                        )
+                );
 
-        Optional<Friend> existing1 = friendRepository.findByUserAndFriendUser(sender, receiver);
-        Optional<Friend> existing2 = friendRepository.findByUserAndFriendUser(receiver, sender);
+        Optional<Friend> existing1 =
+                friendRepository.findByUserAndFriendUser(
+                        sender,
+                        receiver
+                );
 
-        if (existing1.isPresent() || existing2.isPresent()) {
-            throw new IllegalStateException("이미 친구이거나 처리 중인 요청이 존재합니다.");
+        Optional<Friend> existing2 =
+                friendRepository.findByUserAndFriendUser(
+                        receiver,
+                        sender
+                );
+
+        List<Friend> existingRelations = new ArrayList<>();
+
+        existing1.ifPresent(existingRelations::add);
+        existing2.ifPresent(existingRelations::add);
+
+        List<Friend> rejectedRelations = new ArrayList<>();
+
+        for (Friend relation : existingRelations) {
+            if (relation.getStatus() == FriendStatus.ACCEPTED) {
+                throw new ConflictException(
+                        "이미 친구 관계입니다."
+                );
+            }
+
+            if (relation.getStatus() == FriendStatus.PENDING) {
+                throw new ConflictException(
+                        "이미 처리 중인 친구 요청이 존재합니다."
+                );
+            }
+
+            if (relation.getStatus() == FriendStatus.REJECTED) {
+                rejectedRelations.add(relation);
+            }
+        }
+
+        /*
+         * 거절된 요청은 다시 요청할 수 있도록
+         * 기존 REJECTED row를 제거한 뒤 새 PENDING 요청을 생성합니다.
+         */
+        if (!rejectedRelations.isEmpty()) {
+            friendRepository.deleteAll(rejectedRelations);
+            friendRepository.flush();
         }
 
         Friend friendRequest = Friend.builder()
                 .user(sender)
                 .friendUser(receiver)
                 .status(FriendStatus.PENDING)
-                .isEmergencyAllowed(false)
+                .userEmergencyAllowed(false)
+                .friendUserEmergencyAllowed(false)
                 .build();
 
         friendRepository.save(friendRequest);
@@ -93,7 +169,7 @@ public class FriendService {
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getReceivedRequests(Long loginUserId) {
         User me = userRepository.findById(loginUserId)
-                .orElseThrow(() -> new IllegalArgumentException("유저를 찾을 수 없습니다."));
+                .orElseThrow(() -> new NotFoundException("유저를 찾을 수 없습니다."));
 
         List<Friend> receivedList = friendRepository.findByFriendUserAndStatus(me, FriendStatus.PENDING);
         List<Map<String, Object>> data = new ArrayList<>();
@@ -117,7 +193,7 @@ public class FriendService {
     @Transactional(readOnly = true)
     public List<Map<String, Object>> getSentRequests(Long loginUserId) {
         User me = userRepository.findById(loginUserId)
-                .orElseThrow(() -> new IllegalArgumentException("유저를 찾을 수 없습니다."));
+                .orElseThrow(() -> new NotFoundException("유저를 찾을 수 없습니다."));
 
         List<Friend> sentList = friendRepository.findByUserAndStatus(me, FriendStatus.PENDING);
         List<Map<String, Object>> data = new ArrayList<>();
@@ -140,14 +216,14 @@ public class FriendService {
      */
     public void acceptFriendRequest(Long requestId, Long loginUserId) {
         Friend friendRequest = friendRepository.findById(requestId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 친구 요청입니다."));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 친구 요청입니다."));
 
         if (!friendRequest.getFriendUser().getUserId().equals(loginUserId)) {
-            throw new SecurityException("이 친구 요청을 수락할 권한이 없습니다.");
+            throw new ForbiddenException("이 친구 요청을 수락할 권한이 없습니다.");
         }
 
         if (friendRequest.getStatus() != FriendStatus.PENDING) {
-            throw new IllegalArgumentException("대기 중인 요청만 수락할 수 있습니다.");
+            throw new BadRequestException("대기 중인 요청만 수락할 수 있습니다.");
         }
 
         friendRequest.setStatus(FriendStatus.ACCEPTED);
@@ -160,14 +236,14 @@ public class FriendService {
      */
     public void rejectFriendRequest(Long requestId, Long loginUserId) {
         Friend friendRequest = friendRepository.findById(requestId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 친구 요청입니다."));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 친구 요청입니다."));
 
         if (!friendRequest.getFriendUser().getUserId().equals(loginUserId)) {
-            throw new SecurityException("이 친구 요청을 거절할 권한이 없습니다.");
+            throw new ForbiddenException("이 친구 요청을 거절할 권한이 없습니다.");
         }
 
         if (friendRequest.getStatus() != FriendStatus.PENDING) {
-            throw new IllegalArgumentException("대기 중인 요청만 거절할 수 있습니다.");
+            throw new BadRequestException("대기 중인 요청만 거절할 수 있습니다.");
         }
 
         friendRequest.setStatus(FriendStatus.REJECTED);
@@ -180,14 +256,14 @@ public class FriendService {
      */
     public void cancelFriendRequest(Long requestId, Long loginUserId) {
         Friend friendRequest = friendRepository.findById(requestId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 친구 요청입니다."));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 친구 요청입니다."));
 
         if (!friendRequest.getUser().getUserId().equals(loginUserId)) {
-            throw new SecurityException("본인이 보낸 요청만 취소할 수 있습니다.");
+            throw new ForbiddenException("본인이 보낸 요청만 취소할 수 있습니다.");
         }
 
         if (friendRequest.getStatus() != FriendStatus.PENDING) {
-            throw new IllegalArgumentException("대기 중인 요청만 취소할 수 있습니다.");
+            throw new BadRequestException("대기 중인 요청만 취소할 수 있습니다.");
         }
 
         friendRepository.delete(friendRequest);
@@ -199,9 +275,9 @@ public class FriendService {
      */
     public void deleteFriend(Long targetUserId, Long loginUserId) {
         User me = userRepository.findById(loginUserId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 발신 유저입니다."));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 발신 유저입니다."));
         User target = userRepository.findById(targetUserId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 타겟 유저입니다."));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 타겟 유저입니다."));
 
         Optional<Friend> existing1 = friendRepository.findByUserAndFriendUser(me, target);
         Optional<Friend> existing2 = friendRepository.findByUserAndFriendUser(target, me);
@@ -209,7 +285,7 @@ public class FriendService {
         Friend friendRelation = existing1.orElse(existing2.orElse(null));
 
         if (friendRelation == null || friendRelation.getStatus() != FriendStatus.ACCEPTED) {
-            throw new IllegalArgumentException("친구 상태가 아니므로 삭제할 수 없습니다.");
+            throw new BadRequestException("친구 상태가 아니므로 삭제할 수 없습니다.");
         }
 
         friendRepository.delete(friendRelation);
@@ -222,43 +298,268 @@ public class FriendService {
     @Transactional(readOnly = true)
     public void validateFriendship(Long targetUserId, Long loginUserId) {
         User me = userRepository.findById(loginUserId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 발신 유저입니다."));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 발신 유저입니다."));
         User target = userRepository.findById(targetUserId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 타겟 유저입니다."));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 타겟 유저입니다."));
 
         Optional<Friend> existing1 = friendRepository.findByUserAndFriendUser(me, target);
         Optional<Friend> existing2 = friendRepository.findByUserAndFriendUser(target, me);
         Friend friendRelation = existing1.orElse(existing2.orElse(null));
 
         if (friendRelation == null || friendRelation.getStatus() != FriendStatus.ACCEPTED) {
-            throw new SecurityException("친구에게만 쪽지를 보낼 수 있습니다.");
+            throw new ForbiddenException("친구에게만 쪽지를 보낼 수 있습니다.");
         }
     }
 
     /**
-     * 10. 긴급 위치 공유 허용 여부 토글 (Toggle)
-     * 친구 관계자 중 한 명인지 검증 후, 현재 설정을 반대로 반전시키고 바뀐 설정을 반환합니다.
-     * @return 변경 후의 위치 공유 상태 메시지 ("위치 공유 허용" 또는 "위치 공유 차단")
+     * 로그인 사용자가 특정 친구에게
+     * 자기 긴급 위치를 공유할지 명시적으로 설정합니다.
+     * <p>
+     * 각 사용자는 자기 방향의 설정만 변경할 수 있습니다.
      */
-    public String toggleEmergencyAllow(Long friendsId, Long loginUserId) {
+    public Map<String, Object> setEmergencyAllow(
+            Long friendsId,
+            Long loginUserId,
+            Boolean isEmergencyAllowed
+    ) {
+        if (isEmergencyAllowed == null) {
+            throw new BadRequestException(
+                    "긴급 위치 공유 설정값은 필수입니다."
+            );
+        }
         Friend friendRelation = friendRepository.findById(friendsId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 친구 관계입니다."));
-
-        boolean isMyRelation = friendRelation.getUser().getUserId().equals(loginUserId) ||
-                friendRelation.getFriendUser().getUserId().equals(loginUserId);
-
-        if (!isMyRelation) {
-            throw new SecurityException("본인의 친구 관계 설정만 변경할 수 있습니다.");
-        }
-
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "존재하지 않는 친구 관계입니다."
+                        )
+                );
         if (friendRelation.getStatus() != FriendStatus.ACCEPTED) {
-            throw new IllegalArgumentException("수락된 친구 상태에서만 설정을 변경할 수 있습니다.");
+            throw new BadRequestException(
+                    "수락된 친구 관계에서만 설정을 변경할 수 있습니다."
+            );
+        }
+        Long friendUserId;
+        boolean allowedByFriend;
+        /*
+         * 로그인 사용자가 친구 요청을 보냈던 user 쪽이라면
+         * userEmergencyAllowed만 변경합니다.
+         */
+        if (friendRelation.getUser()
+                .getUserId()
+                .equals(loginUserId)) {
+
+            friendRelation.setUserEmergencyAllowed(
+                    isEmergencyAllowed
+            );
+
+            friendUserId = friendRelation
+                    .getFriendUser()
+                    .getUserId();
+
+            allowedByFriend =
+                    friendRelation.isFriendUserEmergencyAllowed();
+
+            /*
+             * 로그인 사용자가 친구 요청을 받았던 friendUser 쪽이라면
+             * friendUserEmergencyAllowed만 변경합니다.
+             */
+        } else if (friendRelation.getFriendUser()
+                .getUserId()
+                .equals(loginUserId)) {
+
+            friendRelation.setFriendUserEmergencyAllowed(
+                    isEmergencyAllowed
+            );
+
+            friendUserId = friendRelation
+                    .getUser()
+                    .getUserId();
+
+            allowedByFriend =
+                    friendRelation.isUserEmergencyAllowed();
+
+        } else {
+            throw new ForbiddenException(
+                    "본인의 친구 관계 설정만 변경할 수 있습니다."
+            );
+        }
+        friendRepository.save(friendRelation);
+        Map<String, Object> result = new HashMap<>();
+
+        result.put(
+                "friendsId",
+                friendRelation.getFriendsId()
+        );
+        result.put(
+                "friendUserId",
+                friendUserId
+        );
+        // 내가 상대방에게 내 위치를 공유하는 설정
+        result.put(
+                "isEmergencyAllowed",
+                isEmergencyAllowed
+        );
+
+        // 상대방이 나에게 자기 위치를 공유하는 설정
+        result.put(
+                "isEmergencyAllowedByFriend",
+                allowedByFriend
+        );
+        return result;
+
+    }
+    /**
+     * reporter 사용자가 viewer 사용자에게
+     * 자기 긴급 위치 공유를 허용했는지 확인합니다.
+     *
+     * 친구 관계가 저장된 방향에 따라
+     * userEmergencyAllowed 또는
+     * friendUserEmergencyAllowed를 구분해서 검사합니다.
+     */
+    @Transactional(readOnly = true)
+    public boolean canAccessEmergencyLocation(
+            Long reporterUserId,
+            Long viewerUserId
+    ) {
+        if (reporterUserId == null || viewerUserId == null) {
+            return false;
         }
 
-        // 토글: true -> false, false -> true 반전
-        friendRelation.setEmergencyAllowed(!friendRelation.isEmergencyAllowed());
-        friendRepository.save(friendRelation);
+        // 본인은 자신의 위치를 조회할 수 있음
+        if (Objects.equals(reporterUserId, viewerUserId)) {
+            return true;
+        }
 
-        return friendRelation.isEmergencyAllowed() ? "위치 공유 허용" : "위치 공유 차단";
+        User reporter = userRepository.findById(reporterUserId)
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "존재하지 않는 신고자입니다."
+                        )
+                );
+
+        User viewer = userRepository.findById(viewerUserId)
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "존재하지 않는 조회 사용자입니다."
+                        )
+                );
+
+        /*
+         * 관계가 reporter → viewer 방향으로 저장된 경우
+         *
+         * reporter가 user 쪽이므로
+         * reporter의 공유 설정은 userEmergencyAllowed입니다.
+         */
+        Optional<Friend> reporterToViewer =
+                friendRepository.findByUserAndFriendUser(
+                        reporter,
+                        viewer
+                );
+
+        if (reporterToViewer.isPresent()) {
+            Friend relation = reporterToViewer.get();
+
+            return relation.getStatus() == FriendStatus.ACCEPTED
+                    && relation.isUserEmergencyAllowed();
+        }
+
+        /*
+         * 관계가 viewer → reporter 방향으로 저장된 경우
+         *
+         * reporter가 friendUser 쪽이므로
+         * reporter의 공유 설정은
+         * friendUserEmergencyAllowed입니다.
+         */
+        Optional<Friend> viewerToReporter =
+                friendRepository.findByUserAndFriendUser(
+                        viewer,
+                        reporter
+                );
+
+        if (viewerToReporter.isPresent()) {
+            Friend relation = viewerToReporter.get();
+
+            return relation.getStatus() == FriendStatus.ACCEPTED
+                    && relation.isFriendUserEmergencyAllowed();
+        }
+
+        return false;
+    }
+    /**
+     * 긴급신고 발생 시 알림을 받을 친구 목록을 반환합니다.
+     *
+     * reporter가 상대방에게 자기 위치 공유를 허용한
+     * ACCEPTED 친구만 반환합니다.
+     */
+    @Transactional(readOnly = true)
+    public List<User> getEmergencyNotificationRecipients(
+            Long reporterUserId
+    ) {
+        User reporter = userRepository
+                .findById(reporterUserId)
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "존재하지 않는 신고자입니다."
+                        )
+                );
+
+        /*
+         * 같은 사용자가 중복으로 추가되지 않도록
+         * userId를 Key로 사용합니다.
+         */
+        Map<Long, User> recipients =
+                new LinkedHashMap<>();
+
+        /*
+         * reporter가 friends.user 쪽인 관계
+         *
+         * reporter의 공유 설정:
+         * userEmergencyAllowed
+         */
+        List<Friend> sentSideRelations =
+                friendRepository.findByUserAndStatus(
+                        reporter,
+                        FriendStatus.ACCEPTED
+                );
+
+        for (Friend relation : sentSideRelations) {
+            if (relation.isUserEmergencyAllowed()) {
+                User recipient =
+                        relation.getFriendUser();
+
+                recipients.put(
+                        recipient.getUserId(),
+                        recipient
+                );
+            }
+        }
+
+        /*
+         * reporter가 friends.friendUser 쪽인 관계
+         *
+         * reporter의 공유 설정:
+         * friendUserEmergencyAllowed
+         */
+        List<Friend> receivedSideRelations =
+                friendRepository.findByFriendUserAndStatus(
+                        reporter,
+                        FriendStatus.ACCEPTED
+                );
+
+        for (Friend relation : receivedSideRelations) {
+            if (relation.isFriendUserEmergencyAllowed()) {
+                User recipient =
+                        relation.getUser();
+
+                recipients.put(
+                        recipient.getUserId(),
+                        recipient
+                );
+            }
+        }
+
+        return new ArrayList<>(
+                recipients.values()
+        );
     }
 }

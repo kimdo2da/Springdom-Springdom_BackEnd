@@ -53,6 +53,21 @@ public class User {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt; // 자동 수정 시간
 
-    @Column(nullable = false, length = 20)
-    private String role = "USER"; // 기본값 USER (관리자는 직접 DB에서 'ADMIN'으로 수정)
+    @Builder.Default
+    @Column(
+            nullable = false,
+            length = 20
+    )
+    private String role = "USER";
+
+    @Builder.Default
+    @Column(
+            name = "is_deleted",
+            nullable = false
+    )
+    @ColumnDefault("0")
+    private boolean deleted = false;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt; // 기본값 USER (관리자는 직접 DB에서 'ADMIN'으로 수정)
 }

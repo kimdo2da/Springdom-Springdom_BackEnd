@@ -21,27 +21,47 @@ public class Friend {
     @Column(name = "friends_id")
     private Long friendsId;
 
-    // 1. 친구 요청을 보낸 사람 (user_id)
+    // 친구 요청을 보낸 사용자
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    // 2. 친구 요청을 받은 사람 (friend_user_id)
+    // 친구 요청을 받은 사용자
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "friend_user_id", nullable = false)
     private User friendUser;
 
-    // 3. 친구 상태 (대기/수락/거절)
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private FriendStatus status;
 
-    // 4. 긴급 위치 공유 허용 여부 (기본값: false)
-    @Column(name = "is_emergency_allowed", nullable = false)
-    private boolean isEmergencyAllowed = false;
+    /*
+     * user 사용자가 friendUser 사용자에게
+     * 자기 긴급 위치를 공유할지 여부
+     */
+    @Builder.Default
+    @Column(
+            name = "user_emergency_allowed",
+            nullable = false
+    )
+    private boolean userEmergencyAllowed = false;
 
-    // 5. 요청 생성 시간
+    /*
+     * friendUser 사용자가 user 사용자에게
+     * 자기 긴급 위치를 공유할지 여부
+     */
+    @Builder.Default
+    @Column(
+            name = "friend_user_emergency_allowed",
+            nullable = false
+    )
+    private boolean friendUserEmergencyAllowed = false;
+
     @CreationTimestamp
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(
+            name = "created_at",
+            nullable = false,
+            updatable = false
+    )
     private LocalDateTime createdAt;
 }

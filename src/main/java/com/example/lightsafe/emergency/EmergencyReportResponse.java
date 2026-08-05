@@ -23,11 +23,11 @@ public record EmergencyReportResponse(
                 report.getUser().getNickname(),
                 report.getLatitude().doubleValue(),
                 report.getLongitude().doubleValue(),
-                report.getReportStatus(),
+                report.getReportStatus().name(),
                 report.getDescription(),
                 report.getIsFalseReport(),
                 report.getDangerZone().getDangerZoneId(),
-                report.getDangerZone().getDangerLevel(),
+                report.getDangerZone().getDangerLevel().name(),
                 CctvResponse.from(report.getNearestCctv()),
                 report.getReportedAt()
         );

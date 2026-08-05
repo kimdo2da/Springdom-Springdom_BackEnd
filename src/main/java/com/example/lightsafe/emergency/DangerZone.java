@@ -30,8 +30,9 @@ public class DangerZone {
     @Column(name = "radius", nullable = false)
     private Integer radius;
 
-    @Column(name = "danger_level", length = 20)
-    private String dangerLevel = "LOW";
+    @Enumerated(EnumType.STRING)
+    @Column(name = "danger_level", nullable = false, length = 20)
+    private DangerLevel dangerLevel = DangerLevel.LOW;
 
     @Column(name = "report_count", nullable = false)
     private Integer reportCount = 0;

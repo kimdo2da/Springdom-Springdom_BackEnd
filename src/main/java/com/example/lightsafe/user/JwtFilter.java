@@ -1,63 +1,223 @@
 package com.example.lightsafe.user;
 
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
-public class JwtFilter extends OncePerRequestFilter {
+public class JwtFilter
+        extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
+    private final UserRepository userRepository;
+
+    private final JwtAuthenticationEntryPoint
+            authenticationEntryPoint;
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
-            throws ServletException, IOException {
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain
+    ) throws ServletException, IOException {
 
-        // 1. 방문객이 가져온 출입증(Header)을 확인합니다.
-        String authorization = request.getHeader("Authorization");
+        /*
+         * DEBUG 로그가 활성화된 경우
+         * 요청마다 필터 실행 횟수를 확인할 수 있습니다.
+         */
+        log.debug(
+                "JwtFilter 실행: method={}, uri={}",
+                request.getMethod(),
+                request.getRequestURI()
+        );
 
-        // 2. 출입증이 있고, "Bearer "로 정상적으로 시작한다면 검사를 시작합니다.
-        if (authorization != null && authorization.startsWith("Bearer ")) {
-            String token = authorization.substring(7); // "Bearer " 글자를 떼어내고 순수 토큰만 남깁니다.
+        String authorization =
+                request.getHeader(
+                        HttpHeaders.AUTHORIZATION
+                );
 
-            try {
-                // 3. 우리가 만든 해독기(JwtUtil)를 써서 유저 번호와 직급을 알아냅니다.
-                Long userId = jwtUtil.getUserIdFromToken(token);
-                String role = jwtUtil.getRoleFromToken(token); // ⭐️ 새롭게 추가된 부분!
+        /*
+         * Authorization 헤더가 아예 없는 경우:
+         *
+         * 공개 API라면 그대로 통과하고,
+         * 보호 API라면 이후 Spring Security가
+         * AuthenticationEntryPoint를 호출합니다.
+         */
+        if (authorization == null
+                || authorization.isBlank()) {
 
-                // 방어 코드: 옛날에 발급받은 토큰이라서 role 정보가 없다면 기본값인 "USER"로 취급합니다.
-                if (role == null) {
-                    role = "USER";
-                }
+            filterChain.doFilter(
+                    request,
+                    response
+            );
 
-                // 4. ⭐️ 스프링 시큐리티의 절대 규칙: 권한 이름 앞에는 반드시 "ROLE_"을 붙여야 합니다.
-                // (예: ADMIN -> ROLE_ADMIN, USER -> ROLE_USER)
-                List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
-
-                // 5. 검사를 무사히 통과했으니, 건물 출입 장부(SecurityContext)에 "이 사람 O번 유저고, 직급은 OOO입니다" 라고 쾅쾅 도장을 찍어줍니다.
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(userId, null, authorities);
-
-                SecurityContextHolder.getContext().setAuthentication(authentication);
-
-            } catch (Exception e) {
-                // 토큰이 만료되었거나(ExpiredJwtException) 위조되었다면 출입 장부에 적지 않고 쫓아냅니다.
-                System.out.println("🚨 [JwtFilter] 토큰 해독 중 에러 발생: " + e.getMessage());
-            }
+            return;
         }
 
-        // 6. 다음 안내데스크(Controller)로 방문객을 넘겨줍니다.
-        filterChain.doFilter(request, response);
+        /*
+         * Authorization 헤더는 있지만
+         * Bearer 형식이 아닌 경우입니다.
+         */
+        if (!authorization.startsWith("Bearer ")) {
+            sendUnauthorized(
+                    request,
+                    response,
+                    "Authorization 헤더는 Bearer 형식이어야 합니다."
+            );
+
+            return;
+        }
+
+        String token =
+                authorization.substring(7).trim();
+
+        if (token.isBlank()) {
+            sendUnauthorized(
+                    request,
+                    response,
+                    "인증 토큰이 비어 있습니다."
+            );
+
+            return;
+        }
+
+        try {
+            Long userId =
+                    jwtUtil.getUserIdFromToken(
+                            token
+                    );
+
+            User user =
+                    userRepository
+                            .findById(userId)
+                            .orElse(null);
+
+            if (user == null
+                    || user.isDeleted()) {
+
+                SecurityContextHolder.clearContext();
+
+                sendUnauthorized(
+                        request,
+                        response,
+                        "존재하지 않거나 탈퇴한 계정입니다."
+                );
+
+                return;
+            }
+
+            String role =
+                    user.getRole();
+
+            if (role == null
+                    || role.isBlank()) {
+
+                role = "USER";
+            }
+
+            /*
+             * 다른 인증 필터가 먼저 인증을 저장한 경우
+             * 기존 인증을 덮어쓰지 않습니다.
+             */
+            if (SecurityContextHolder
+                    .getContext()
+                    .getAuthentication() == null) {
+
+                String authorityName =
+                        role.startsWith("ROLE_")
+                                ? role
+                                : "ROLE_" + role;
+
+                List<SimpleGrantedAuthority> authorities =
+                        List.of(
+                                new SimpleGrantedAuthority(
+                                        authorityName
+                                )
+                        );
+
+                UsernamePasswordAuthenticationToken
+                        authentication =
+                        new UsernamePasswordAuthenticationToken(
+                                userId,
+                                null,
+                                authorities
+                        );
+
+                authentication.setDetails(
+                        new WebAuthenticationDetailsSource()
+                                .buildDetails(request)
+                );
+
+                SecurityContextHolder
+                        .getContext()
+                        .setAuthentication(
+                                authentication
+                        );
+            }
+
+            filterChain.doFilter(
+                    request,
+                    response
+            );
+
+        } catch (ExpiredJwtException e) {
+            SecurityContextHolder.clearContext();
+
+            sendUnauthorized(
+                    request,
+                    response,
+                    "인증 토큰이 만료되었습니다."
+            );
+
+        } catch (JwtException
+                 | IllegalArgumentException e) {
+
+            SecurityContextHolder.clearContext();
+
+            sendUnauthorized(
+                    request,
+                    response,
+                    "유효하지 않은 인증 토큰입니다."
+            );
+        }
+    }
+
+    private void sendUnauthorized(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            String message
+    ) throws IOException, ServletException {
+
+        request.setAttribute(
+                JwtAuthenticationEntryPoint
+                        .JWT_ERROR_MESSAGE,
+                message
+        );
+
+        authenticationEntryPoint.commence(
+                request,
+                response,
+                new BadCredentialsException(
+                        message
+                )
+        );
     }
 }

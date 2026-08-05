@@ -3,6 +3,9 @@ package com.example.lightsafe.friends;
 import com.example.lightsafe.user.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -18,4 +21,14 @@ public interface FriendRepository extends JpaRepository<Friend, Long> {
 
     // 3. 내가 받은 친구 요청 목록 찾기 (friendUser가 나인 경우)
     List<Friend> findByFriendUserAndStatus(User friendUser, FriendStatus status);
+    @Modifying(flushAutomatically = true)
+    @Query("""
+        DELETE FROM Friend friend
+         WHERE friend.user.userId = :userId
+            OR friend.friendUser.userId = :userId
+        """)
+    int deleteAllRelationshipsByUserId(
+            @Param("userId")
+            Long userId
+    );
 }

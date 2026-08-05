@@ -6,6 +6,13 @@ import com.example.lightsafe.user.UserService;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+import com.example.lightsafe.common.exception.BadRequestException;
+import com.example.lightsafe.common.exception.ForbiddenException;
+import com.example.lightsafe.common.exception.NotFoundException;
+import com.example.lightsafe.common.exception.UnauthorizedException;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -20,6 +27,29 @@ public class PostService {
     private final FileStorageService fileStorageService;
     private final UserRepository userRepository;
     private final UserService userService;
+
+    private static final String CATEGORY_NOTICE =
+            "NOTICE";
+
+    private static final String DEFAULT_POST_CATEGORY =
+            "INFO";
+
+    private static final Set<String> USER_POST_CATEGORIES =
+            Set.of(
+                    "INFO",
+                    "QUESTION",
+                    "REPORT",
+                    "TIP"
+            );
+
+    private static final Set<String> READABLE_CATEGORIES =
+            Set.of(
+                    "NOTICE",
+                    "INFO",
+                    "QUESTION",
+                    "REPORT",
+                    "TIP"
+            );
 
     public PostService(
             PostRepository postRepository,
@@ -95,30 +125,70 @@ public class PostService {
     }
 
     @Transactional(readOnly = true)
-    public PostListPageResponse getPostsByCategory(String category, int page, int size, String sort) {
-        Sort sortSpec = buildSearchSort(sort);
-        Pageable pageable = PageRequest.of(page, size, sortSpec);
-        Page<Post> postPage = postRepository.findByCategory(category, pageable);
+    public PostListPageResponse getPostsByCategory(
+            String category,
+            int page,
+            int size,
+            String sort
+    ) {
+        String normalizedCategory =
+                normalizeReadableCategory(
+                        category
+                );
 
-        List<PostListResponse> items = postPage.getContent()
-                .stream()
-                .map(PostListResponse::from)
-                .toList();
+        int safePage =
+                Math.max(
+                        page,
+                        0
+                );
 
-        PostPageInfo pageInfo = new PostPageInfo(
-                postPage.getNumber(),
-                postPage.getSize(),
-                postPage.getTotalElements(),
-                postPage.getTotalPages()
+        int safeSize =
+                size <= 0
+                        ? 10
+                        : size;
+
+        Sort sortSpec =
+                buildSearchSort(
+                        sort
+                );
+
+        Pageable pageable =
+                PageRequest.of(
+                        safePage,
+                        safeSize,
+                        sortSpec
+                );
+
+        Page<Post> postPage =
+                postRepository.findByCategory(
+                        normalizedCategory,
+                        pageable
+                );
+
+        List<PostListResponse> items =
+                postPage.getContent()
+                        .stream()
+                        .map(PostListResponse::from)
+                        .toList();
+
+        PostPageInfo pageInfo =
+                new PostPageInfo(
+                        postPage.getNumber(),
+                        postPage.getSize(),
+                        postPage.getTotalElements(),
+                        postPage.getTotalPages()
+                );
+
+        return new PostListPageResponse(
+                items,
+                pageInfo
         );
-
-        return new PostListPageResponse(items, pageInfo);
     }
 
     @Transactional(readOnly = true)
     public PostListPageResponse searchPosts(String keyword, int page, int size, String sort) {
         if (keyword == null || keyword.trim().isEmpty()) {
-            throw new IllegalArgumentException("게시글이 존재하지 않습니다");
+            throw new BadRequestException("검색어를 입력해주세요.");
         }
 
         int safePage = Math.max(page, 0);
@@ -149,7 +219,7 @@ public class PostService {
     @Transactional(readOnly = true)
     public PostDetailResponse getPostDetail(Long postId) {
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
 
         User currentUser = userService.getCurrentUser();
         boolean isLiked = false;
@@ -185,7 +255,7 @@ public class PostService {
     @Transactional
     public void increaseViewCount(Long postId) {
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
         Integer vc = post.getViewCount();
         post.setViewCount((vc == null ? 0 : vc) + 1);
     }
@@ -262,18 +332,18 @@ public class PostService {
     @Transactional
     public Long createComment(Long postId, CommentCreateRequest request) {
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
 
         User user = userService.getCurrentUser();
-        if (user == null) throw new IllegalArgumentException("로그인이 필요합니다.");
+        if (user == null) throw new UnauthorizedException("로그인이 필요합니다.");
 
         Comment parent = null;
         if (request.parentId() != null) {
             parent = commentRepository.findById(request.parentId())
-                    .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 부모 댓글입니다. id=" + request.parentId()));
+                    .orElseThrow(() -> new NotFoundException("존재하지 않는 부모 댓글입니다. id=" + request.parentId()));
 
             if (!Objects.equals(parent.getPost().getPostId(), postId)) {
-                throw new IllegalArgumentException("부모 댓글이 해당 게시글에 속하지 않습니다.");
+                throw new BadRequestException("부모 댓글이 해당 게시글에 속하지 않습니다.");
             }
         }
 
@@ -292,33 +362,68 @@ public class PostService {
     }
 
     @Transactional
-    public void updateComment(Long commentId, String content) {
-        Comment comment = commentRepository.findById(commentId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 댓글입니다. id=" + commentId));
+    public void updateComment(
+            Long postId,
+            Long commentId,
+            CommentUpdateRequest request
+    ) {
+        postRepository.findById(postId)
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "존재하지 않는 게시글입니다. id=" + postId
+                        )
+                );
 
-        User user = userService.getCurrentUser();
-        if (user == null || !Objects.equals(comment.getUser().getUserId(), user.getUserId())) {
-            throw new IllegalArgumentException("본인의 댓글만 수정할 수 있습니다.");
+        Comment comment = commentRepository
+                .findById(commentId)
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "존재하지 않는 댓글입니다. id=" + commentId
+                        )
+                );
+
+        if (!Objects.equals(
+                comment.getPost().getPostId(),
+                postId
+        )) {
+            throw new BadRequestException(
+                    "해당 게시글의 댓글이 아닙니다."
+            );
         }
 
-        comment.setContent(content);
+        User user =
+                userService.getCurrentUser();
+
+        if (user == null
+                || !Objects.equals(
+                comment.getUser().getUserId(),
+                user.getUserId()
+        )) {
+            throw new ForbiddenException(
+                    "본인의 댓글만 수정할 수 있습니다."
+            );
+        }
+
+        comment.setContent(
+                request.content().trim()
+        );
     }
 
     @Transactional
     public void deleteComment(Long postId, Long commentId) {
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
 
         Comment target = commentRepository.findById(commentId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 댓글입니다. id=" + commentId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 댓글입니다. id=" + commentId));
 
         User user = userService.getCurrentUser();
         if (user == null || !Objects.equals(target.getUser().getUserId(), user.getUserId())) {
-            throw new IllegalArgumentException("본인의 댓글만 삭제할 수 있습니다.");
+            throw new ForbiddenException("본인의 댓글만 삭제할 수 있습니다.");
         }
 
         if (!Objects.equals(target.getPost().getPostId(), postId)) {
-            throw new IllegalArgumentException("해당 게시글의 댓글이 아닙니다.");
+            throw new BadRequestException("해당 게시글의 댓글이 아닙니다.");
         }
 
         List<Long> deleteIds = collectDescendantIdsInclusive(postId, commentId);
@@ -370,6 +475,96 @@ public class PostService {
             default -> Sort.by(Sort.Direction.DESC, "createdAt");
         };
     }
+    private String normalizeReadableCategory(
+            String category
+    ) {
+        if (category == null
+                || category.isBlank()) {
+
+            throw new BadRequestException(
+                    "카테고리를 입력해주세요."
+            );
+        }
+
+        String normalized =
+                category
+                        .trim()
+                        .toUpperCase(
+                                Locale.ROOT
+                        );
+
+        if (!READABLE_CATEGORIES.contains(
+                normalized
+        )) {
+            throw new BadRequestException(
+                    "허용되지 않은 게시글 카테고리입니다. 허용값: NOTICE, INFO, QUESTION, REPORT, TIP"
+            );
+        }
+
+        return normalized;
+    }
+
+
+    private String normalizeCreateCategory(
+            String category
+    ) {
+        if (category == null
+                || category.isBlank()) {
+
+            return DEFAULT_POST_CATEGORY;
+        }
+
+        return normalizeUserPostCategory(
+                category
+        );
+    }
+
+
+    private String normalizeUpdateCategory(
+            String category
+    ) {
+        if (category == null
+                || category.isBlank()) {
+
+            throw new BadRequestException(
+                    "카테고리를 입력해주세요."
+            );
+        }
+
+        return normalizeUserPostCategory(
+                category
+        );
+    }
+
+
+    private String normalizeUserPostCategory(
+            String category
+    ) {
+        String normalized =
+                category
+                        .trim()
+                        .toUpperCase(
+                                Locale.ROOT
+                        );
+
+        if (CATEGORY_NOTICE.equals(
+                normalized
+        )) {
+            throw new BadRequestException(
+                    "일반 게시글은 NOTICE 카테고리를 사용할 수 없습니다."
+            );
+        }
+
+        if (!USER_POST_CATEGORIES.contains(
+                normalized
+        )) {
+            throw new BadRequestException(
+                    "허용되지 않은 게시글 카테고리입니다. 허용값: INFO, QUESTION, REPORT, TIP"
+            );
+        }
+
+        return normalized;
+    }
 
 
     // =========================================================
@@ -378,12 +573,12 @@ public class PostService {
     @Transactional
     public void likePost(Long postId) {
         User user = userService.getCurrentUser();
-        if (user == null) throw new IllegalArgumentException("로그인이 필요합니다.");
+        if (user == null) throw new UnauthorizedException("로그인이 필요합니다.");
 
         if (postLikeRepository.existsByPostPostIdAndUserUserId(postId, user.getUserId())) return;
 
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
 
         PostLike like = new PostLike();
         like.setPost(post);
@@ -396,40 +591,97 @@ public class PostService {
 
     @Transactional
     public void unlikePost(Long postId) {
-        User user = userService.getCurrentUser();
-        if (user == null) throw new IllegalArgumentException("로그인이 필요합니다.");
+        User user =
+                userService.getCurrentUser();
 
-        if (!postLikeRepository.existsByPostPostIdAndUserUserId(postId, user.getUserId())) return;
+        if (user == null) {
+            throw new UnauthorizedException(
+                    "로그인이 필요합니다."
+            );
+        }
 
-        Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+        Post post =
+                postRepository.findById(
+                                postId
+                        )
+                        .orElseThrow(() ->
+                                new NotFoundException(
+                                        "존재하지 않는 게시글입니다. id=" + postId
+                                )
+                        );
 
-        postLikeRepository.deleteByPostPostIdAndUserUserId(postId, user.getUserId());
+        if (!postLikeRepository.existsByPostPostIdAndUserUserId(
+                postId,
+                user.getUserId()
+        )) {
+            return;
+        }
 
-        Integer lc = post.getLikeCount();
-        post.setLikeCount(Math.max(0, (lc == null ? 0 : lc) - 1));
+        postLikeRepository.deleteByPostPostIdAndUserUserId(
+                postId,
+                user.getUserId()
+        );
+
+        Integer lc =
+                post.getLikeCount();
+
+        post.setLikeCount(
+                Math.max(
+                        0,
+                        (lc == null ? 0 : lc) - 1
+                )
+        );
     }
 
     // =========================================================
     // 6) 게시글 CRUD (공지 isNotice는 여기서 못 건드림)
     // =========================================================
     @Transactional
-    public Long createPost(PostCreateRequest request) {
-        User user = userRepository.findById(request.userId())
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다. id=" + request.userId()));
+    public Long createPost(
+            PostCreateRequest request
+    ) {
+        User user =
+                userService.getCurrentUser();
 
-        Post post = new Post();
-        post.setTitle(request.title());
-        post.setContent(request.content());
-        post.setUser(user);
-        post.setCategory(request.category() != null ? request.category() : "INFO"); // ✅ 카테고리 추가
-        post.setIsNotice(false); // ✅ 일반 작성은 무조건 일반글
+        if (user == null) {
+            throw new UnauthorizedException(
+                    "로그인이 필요합니다."
+            );
+        }
 
-        return postRepository.save(post).getPostId();
+        Post post =
+                new Post();
+
+        post.setTitle(
+                request.title()
+        );
+        post.setContent(
+                request.content()
+        );
+        post.setUser(
+                user
+        );
+        post.setCategory(
+                normalizeCreateCategory(
+                        request.category()
+                )
+        );
+        post.setIsNotice(
+                false
+        );
+
+        return postRepository
+                .save(
+                        post
+                )
+                .getPostId();
     }
 
     @Transactional
-    public Long createPostWithFiles(PostCreateRequest request, java.util.List<org.springframework.web.multipart.MultipartFile> files) {
+    public Long createPostWithFiles(
+            PostCreateRequest request,
+            List<MultipartFile> files
+    ) {
         Long postId = createPost(request);
 
         if (files == null || files.isEmpty()) {
@@ -437,53 +689,79 @@ public class PostService {
         }
 
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(
+                        () -> new NotFoundException(
+                                "존재하지 않는 게시글입니다. id=" + postId
+                        )
+                );
 
-        for (org.springframework.web.multipart.MultipartFile file : files) {
-            if (file == null || file.isEmpty()) continue;
-
-            FileStorageService.StoredFile stored = fileStorageService.store(file);
-            PostAttachment attachment = new PostAttachment();
-            attachment.setPost(post);
-            attachment.setOriginalFilename(stored.originalFilename());
-            attachment.setStoredFilename(stored.storedFilename());
-            attachment.setContentType(stored.contentType());
-            attachment.setFileSize(stored.size());
-            postAttachmentRepository.save(attachment);
-        }
+        saveAttachments(
+                post,
+                files
+        );
 
         return postId;
     }
 
     @Transactional
-    public PostResponse updatePost(Long postId, PostUpdateRequest request) {
-        Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+    public void updatePost(
+            Long postId,
+            PostUpdateRequest request
+    ) {
+        Post post =
+                postRepository.findById(
+                                postId
+                        )
+                        .orElseThrow(() ->
+                                new NotFoundException(
+                                        "존재하지 않는 게시글입니다. id=" + postId
+                                )
+                        );
 
-        User user = userService.getCurrentUser();
-        if (user == null || !Objects.equals(post.getUser().getUserId(), user.getUserId())) {
-            throw new IllegalArgumentException("본인의 게시글만 수정할 수 있습니다.");
+        User user =
+                userService.getCurrentUser();
+
+        if (user == null
+                || !Objects.equals(
+                post.getUser().getUserId(),
+                user.getUserId()
+        )) {
+            throw new ForbiddenException(
+                    "본인의 게시글만 수정할 수 있습니다."
+            );
         }
 
-        post.setTitle(request.title());
-        post.setContent(request.content());
+        post.setTitle(
+                request.title()
+        );
+        post.setContent(
+                request.content()
+        );
 
-        // 공지글이 아닐 때만 카테고리 변경 허용 (보안/데이터 정합성)
-        if (!post.getIsNotice() && request.category() != null) {
-            post.setCategory(request.category());
+        /*
+         * 공지글은 일반 수정 API에서 카테고리를 바꾸지 않습니다.
+         * 일반 게시글은 NOTICE 카테고리를 사용할 수 없습니다.
+         */
+        if (!Boolean.TRUE.equals(
+                post.getIsNotice()
+        ) && request.category() != null) {
+
+            post.setCategory(
+                    normalizeUpdateCategory(
+                            request.category()
+                    )
+            );
         }
-
-        return PostResponse.from(post);
     }
 
     @Transactional
     public void deletePost(Long postId) {
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다. id=" + postId));
+                .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
 
         User user = userService.getCurrentUser();
         if (user == null || !Objects.equals(post.getUser().getUserId(), user.getUserId())) {
-            throw new IllegalArgumentException("본인의 게시글만 삭제할 수 있습니다.");
+            throw new ForbiddenException("본인의 게시글만 삭제할 수 있습니다.");
         }
 
         //충돌 방지 댓글 먼저 삭제
@@ -499,50 +777,285 @@ public class PostService {
     @Transactional(readOnly = true)
     public PostAttachment getAttachment(Long attachmentId) {
         return postAttachmentRepository.findById(attachmentId)
-                .orElseThrow(() -> new IllegalArgumentException("첨부파일이 존재하지 않습니다. id=" + attachmentId));
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "첨부파일이 존재하지 않습니다. id="
+                                        + attachmentId
+                        )
+                );
     }
 
     @Transactional(readOnly = true)
-    public org.springframework.core.io.Resource loadAttachmentResource(Long attachmentId) {
-        PostAttachment attachment = getAttachment(attachmentId);
-        java.nio.file.Path path = fileStorageService.load(attachment.getStoredFilename());
+    public org.springframework.core.io.Resource
+    loadAttachmentResource(
+            Long attachmentId
+    ) {
+        PostAttachment attachment =
+                getAttachment(attachmentId);
+
+        java.nio.file.Path path =
+                fileStorageService.load(
+                        attachment.getStoredFilename()
+                );
+
         try {
-            org.springframework.core.io.Resource resource = new org.springframework.core.io.UrlResource(path.toUri());
+            org.springframework.core.io.Resource resource =
+                    new org.springframework.core.io.UrlResource(
+                            path.toUri()
+                    );
+
             if (!resource.exists()) {
-                throw new IllegalArgumentException("첨부파일을 찾을 수 없습니다.");
+                throw new NotFoundException(
+                        "첨부파일을 찾을 수 없습니다."
+                );
             }
+
             return resource;
+
+        } catch (NotFoundException e) {
+            throw e;
+
         } catch (Exception e) {
-            throw new IllegalArgumentException("첨부파일을 찾을 수 없습니다.");
+            throw new NotFoundException(
+                    "첨부파일을 찾을 수 없습니다."
+            );
         }
     }
 
-    private void deleteAttachmentsByPostId(Long postId) {
-        List<PostAttachment> attachments = postAttachmentRepository.findByPostPostIdOrderByCreatedAtAsc(postId);
+    private void deleteAttachmentsByPostId(
+            Long postId
+    ) {
+        List<PostAttachment> attachments =
+                postAttachmentRepository
+                        .findByPostPostIdOrderByCreatedAtAsc(
+                                postId
+                        );
+
         for (PostAttachment attachment : attachments) {
-            try {
-                java.nio.file.Files.deleteIfExists(fileStorageService.load(attachment.getStoredFilename()));
-            } catch (Exception ignored) {
-            }
+            fileStorageService.deleteStoredFile(
+                    attachment.getStoredFilename()
+            );
         }
-        postAttachmentRepository.deleteByPostPostId(postId);
+
+        postAttachmentRepository
+                .deleteByPostPostId(
+                        postId
+                );
     }
 
     // =========================================================
     // 7) 공지 작성: 관리자 전용
     // =========================================================
     @Transactional
-    public Long createNotice(AdminNoticeCreateRequest request) {
-        User admin = userRepository.findById(request.adminUserId())
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다. id=" + request.adminUserId()));
+    public Long createNotice(
+            AdminNoticeCreateRequest request
+    ) {
+        User admin = requireAdmin();
 
+        Post post = buildNotice(
+                admin,
+                request
+        );
+
+        return postRepository
+                .save(post)
+                .getPostId();
+    }
+
+
+    // 첨부파일이 있는 관리자 공지 작성
+    @Transactional
+    public Long createNoticeWithFiles(
+            AdminNoticeCreateRequest request,
+            List<MultipartFile> files
+    ) {
+        User admin = requireAdmin();
+
+        if (!hasAtLeastOneFile(files)) {
+            throw new BadRequestException(
+                    "첨부파일은 최소 1개 이상 필요합니다."
+            );
+        }
+
+        Post post = postRepository.save(
+                buildNotice(
+                        admin,
+                        request
+                )
+        );
+
+        saveAttachments(
+                post,
+                files
+        );
+
+        return post.getPostId();
+    }
+
+
+    // 현재 로그인 사용자가 관리자인지 확인
+    private User requireAdmin() {
+        User admin = userService.getCurrentUser();
+
+        if (admin == null) {
+            throw new UnauthorizedException(
+                    "로그인이 필요합니다."
+            );
+        }
+
+        if (!"ADMIN".equalsIgnoreCase(
+                admin.getRole()
+        )) {
+            throw new ForbiddenException(
+                    "관리자만 공지사항을 작성할 수 있습니다."
+            );
+        }
+
+        return admin;
+    }
+
+
+    // 공지사항 엔티티 공통 생성
+    private Post buildNotice(
+            User admin,
+            AdminNoticeCreateRequest request
+    ) {
         Post post = new Post();
-        post.setTitle(request.title());
-        post.setContent(request.content());
-        post.setUser(admin);
-        post.setCategory("NOTICE"); // ✅ 카테고리 고정
-        post.setIsNotice(true); // ✅ 여기서만 공지 생성
 
-        return postRepository.save(post).getPostId();
+        post.setTitle(
+                request.title()
+        );
+        post.setContent(
+                request.content()
+        );
+        post.setUser(
+                admin
+        );
+        post.setCategory(
+                "NOTICE"
+        );
+        post.setIsNotice(
+                true
+        );
+
+        return post;
+    }
+    private boolean hasAtLeastOneFile(
+            List<MultipartFile> files
+    ) {
+        return files != null
+                && files.stream()
+                .anyMatch(
+                        file -> file != null
+                                && !file.isEmpty()
+                );
+    }
+
+
+    private void saveAttachments(
+            Post post,
+            List<MultipartFile> files
+    ) {
+        if (files == null
+                || files.isEmpty()) {
+
+            return;
+        }
+
+        List<String> storedFilenames =
+                new ArrayList<>();
+
+        registerRollbackFileCleanup(
+                storedFilenames
+        );
+
+        try {
+            for (MultipartFile file : files) {
+                if (file == null
+                        || file.isEmpty()) {
+
+                    continue;
+                }
+
+                FileStorageService.StoredFile stored =
+                        fileStorageService.store(
+                                file
+                        );
+
+                storedFilenames.add(
+                        stored.storedFilename()
+                );
+
+                PostAttachment attachment =
+                        new PostAttachment();
+
+                attachment.setPost(
+                        post
+                );
+                attachment.setOriginalFilename(
+                        stored.originalFilename()
+                );
+                attachment.setStoredFilename(
+                        stored.storedFilename()
+                );
+                attachment.setContentType(
+                        stored.contentType()
+                );
+                attachment.setFileSize(
+                        stored.size()
+                );
+
+                postAttachmentRepository.save(
+                        attachment
+                );
+            }
+
+        } catch (RuntimeException e) {
+            if (!TransactionSynchronizationManager
+                    .isSynchronizationActive()) {
+
+                cleanupStoredFiles(
+                        storedFilenames
+                );
+            }
+
+            throw e;
+        }
+    }
+    private void registerRollbackFileCleanup(
+            List<String> storedFilenames
+    ) {
+        if (!TransactionSynchronizationManager
+                .isSynchronizationActive()) {
+
+            return;
+        }
+
+        TransactionSynchronizationManager
+                .registerSynchronization(
+                        new TransactionSynchronization() {
+                            @Override
+                            public void afterCompletion(
+                                    int status
+                            ) {
+                                if (status == STATUS_ROLLED_BACK) {
+                                    cleanupStoredFiles(
+                                            storedFilenames
+                                    );
+                                }
+                            }
+                        }
+                );
+    }
+
+
+    private void cleanupStoredFiles(
+            List<String> storedFilenames
+    ) {
+        for (String storedFilename : storedFilenames) {
+            fileStorageService.deleteStoredFile(
+                    storedFilename
+            );
+        }
     }
 }

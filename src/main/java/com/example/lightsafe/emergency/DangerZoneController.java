@@ -2,7 +2,9 @@ package com.example.lightsafe.emergency;
 
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import com.example.lightsafe.common.response.ApiResponse;
 
 import java.util.List;
 
@@ -11,59 +13,72 @@ import java.util.List;
 public class DangerZoneController {
 
     private final DangerZoneService dangerZoneService;
-    private final EmergencyReportService2 emergencyReportService;
+    private final EmergencyReportService emergencyReportService;
 
     public DangerZoneController(
             DangerZoneService dangerZoneService,
-            EmergencyReportService2 emergencyReportService
+            EmergencyReportService emergencyReportService
     ) {
         this.dangerZoneService = dangerZoneService;
         this.emergencyReportService = emergencyReportService;
     }
 
     @GetMapping
-    public ResponseEntity<EmergencyApiResponse<List<DangerZoneResponse>>> getDangerZones() {
-        return ResponseEntity.ok(EmergencyApiResponse.ok(dangerZoneService.getDangerZones()));
+    public ResponseEntity<ApiResponse<List<PublicDangerZoneResponse>>> getDangerZones() {
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        dangerZoneService.getDangerZones()
+                )
+        );
     }
 
     @GetMapping("/{dangerZoneId}")
-    public ResponseEntity<EmergencyApiResponse<DangerZoneDetailResponse>> getDangerZoneDetail(
+    public ResponseEntity<ApiResponse<PublicDangerZoneResponse>> getDangerZoneDetail(
             @PathVariable Long dangerZoneId
     ) {
-        return ResponseEntity.ok(EmergencyApiResponse.ok(dangerZoneService.getDangerZoneDetail(dangerZoneId)));
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        dangerZoneService.getDangerZoneDetail(dangerZoneId)
+                )
+        );
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{dangerZoneId}/level")
-    public ResponseEntity<EmergencyApiResponse<DangerZoneResponse>> updateDangerLevel(
+    public ResponseEntity<ApiResponse<DangerZoneResponse>> updateDangerLevel(
             @PathVariable Long dangerZoneId,
             @RequestBody @Valid DangerLevelUpdateRequest request
     ) {
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(
+                ApiResponse.ok(
                         dangerZoneService.updateDangerLevel(dangerZoneId, request),
                         "DANGER_LEVEL_UPDATED"
                 )
         );
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{dangerZoneId}/deactivate")
-    public ResponseEntity<EmergencyApiResponse<DangerZoneResponse>> deactivateDangerZone(
+    public ResponseEntity<ApiResponse<DangerZoneResponse>> deactivateDangerZone(
             @PathVariable Long dangerZoneId
     ) {
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(
+                ApiResponse.ok(
                         dangerZoneService.deactivateDangerZone(dangerZoneId),
                         "DANGER_ZONE_DEACTIVATED"
                 )
         );
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/{dangerZoneId}/reports")
-    public ResponseEntity<EmergencyApiResponse<List<EmergencyReportResponse>>> getReportsByDangerZone(
+    public ResponseEntity<ApiResponse<List<EmergencyReportResponse>>> getReportsByDangerZone(
             @PathVariable Long dangerZoneId
     ) {
         return ResponseEntity.ok(
-                EmergencyApiResponse.ok(emergencyReportService.getReportsByDangerZone(dangerZoneId))
+                ApiResponse.ok(
+                        emergencyReportService.getReportsByDangerZone(dangerZoneId)
+                )
         );
     }
 }

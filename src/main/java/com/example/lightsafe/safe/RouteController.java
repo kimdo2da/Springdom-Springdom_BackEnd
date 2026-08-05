@@ -1,34 +1,47 @@
 package com.example.lightsafe.safe;
 
+import com.example.lightsafe.common.exception.BadRequestException;
+import com.example.lightsafe.common.response.ApiResponse;
+import com.example.lightsafe.routehistory.RouteHistoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*") // CORS 허용
 public class RouteController {
 
     private final RouteService routeService;
+    private final RouteHistoryService routeHistoryService;
 
     @PostMapping("/routes")
-    public ResponseEntity<ApiResponse> getRoutes(@RequestBody RouteRequestDto request) {
+    public ResponseEntity<ApiResponse<List<RouteDto>>> getRoutes(
+            @RequestBody RouteRequestDto request
+    ) {
+        List<RouteDto> routeList =
+                routeService.getTop3SafeRoutes(
+                        request
+                );
 
-        List<RouteDto> routeList = new ArrayList<>();
+        if (routeList == null
+                || routeList.isEmpty()) {
 
-        // 서비스에서 카카오내비 API를 통해 안전 경로 획득
-        RouteDto safeRoute = routeService.getSafeRoute(request, 1);
-
-        if (safeRoute != null) {
-            routeList.add(safeRoute);
-            ApiResponse response = new ApiResponse(true, routeList, "안전 경로 탐색 완료!");
-            return ResponseEntity.ok(response);
-        } else {
-            ApiResponse response = new ApiResponse(false, null, "경로 탐색에 실패했습니다.");
-            return ResponseEntity.badRequest().body(response);
+            throw new BadRequestException(
+                    "경로 탐색에 실패했습니다."
+            );
         }
+
+        routeHistoryService.saveFromRouteSearchIfAuthenticated(
+                request
+        );
+
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        routeList,
+                        "안전 경로 " + routeList.size() + "개 탐색 완료"
+                )
+        );
     }
 }

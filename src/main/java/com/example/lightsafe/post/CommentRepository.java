@@ -5,6 +5,8 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
@@ -20,4 +22,20 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
     @Modifying // 환경차 안전빵
     //@Transactional
     void deleteByPostPostId(Long postId);
+    @Modifying(
+            flushAutomatically = true,
+            clearAutomatically = true
+    )
+    @Query("""
+        UPDATE Comment comment
+           SET comment.content = :deletedContent
+         WHERE comment.user.userId = :userId
+        """)
+    int anonymizeCommentsByUserId(
+            @Param("userId")
+            Long userId,
+
+            @Param("deletedContent")
+            String deletedContent
+    );
 }
