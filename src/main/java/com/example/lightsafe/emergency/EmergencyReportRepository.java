@@ -38,6 +38,10 @@ public interface EmergencyReportRepository
     long countByDangerZone_DangerZoneIdAndIsFalseReportFalse(
             Long dangerZoneId
     );
+    long countByDangerZone_DangerZoneIdAndReportStatusAndIsFalseReportFalse(
+            Long dangerZoneId,
+            EmergencyReportStatus reportStatus
+    );
 
     @Query(
             value = """
