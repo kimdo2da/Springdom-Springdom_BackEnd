@@ -45,7 +45,7 @@ public class FriendController {
 
         friendService.sendFriendRequest(
                 loginUserId,
-                requestDto.getTargetUserId()
+                requestDto
         );
 
         return ApiResponse.ok(
