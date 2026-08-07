@@ -45,44 +45,62 @@ public interface EmergencyReportRepository
 
     @Query(
             value = """
-                    SELECT report
-                    FROM EmergencyReport report
-                    JOIN FETCH report.user reporter
-                    JOIN FETCH report.dangerZone dangerZone
-                    LEFT JOIN FETCH report.nearestCctv nearestCctv
-                    WHERE (:status IS NULL
-                           OR report.reportStatus = :status)
-                      AND (:isFalseReport IS NULL
-                           OR report.isFalseReport = :isFalseReport)
-                      AND (:dangerZoneId IS NULL
-                           OR dangerZone.dangerZoneId = :dangerZoneId)
-                      AND (:reporterId IS NULL
-                           OR reporter.userId = :reporterId)
-                      AND (:startDate IS NULL
-                           OR report.reportedAt >= :startDate)
-                      AND (:endDate IS NULL
-                           OR report.reportedAt <= :endDate)
-                    ORDER BY report.reportedAt DESC,
-                             report.reportId DESC
-                    """,
+                SELECT report
+                FROM EmergencyReport report
+                JOIN FETCH report.user reporter
+                JOIN FETCH report.dangerZone dangerZone
+                LEFT JOIN FETCH report.nearestCctv nearestCctv
+                WHERE (:status IS NULL
+                       OR report.reportStatus = :status)
+                  AND (:isFalseReport IS NULL
+                       OR report.isFalseReport = :isFalseReport)
+                  AND (:dangerZoneId IS NULL
+                       OR dangerZone.dangerZoneId = :dangerZoneId)
+                  AND (:reporterId IS NULL
+                       OR reporter.userId = :reporterId)
+                  AND (
+                        :keyword IS NULL
+                        OR LOWER(COALESCE(report.description, ''))
+                           LIKE LOWER(CONCAT('%', :keyword, '%'))
+                        OR LOWER(COALESCE(reporter.nickname, ''))
+                           LIKE LOWER(CONCAT('%', :keyword, '%'))
+                        OR LOWER(COALESCE(reporter.username, ''))
+                           LIKE LOWER(CONCAT('%', :keyword, '%'))
+                      )
+                  AND (:startDate IS NULL
+                       OR report.reportedAt >= :startDate)
+                  AND (:endDate IS NULL
+                       OR report.reportedAt <= :endDate)
+                ORDER BY report.reportedAt DESC,
+                         report.reportId DESC
+                """,
             countQuery = """
-                    SELECT COUNT(report)
-                    FROM EmergencyReport report
-                    JOIN report.user reporter
-                    JOIN report.dangerZone dangerZone
-                    WHERE (:status IS NULL
-                           OR report.reportStatus = :status)
-                      AND (:isFalseReport IS NULL
-                           OR report.isFalseReport = :isFalseReport)
-                      AND (:dangerZoneId IS NULL
-                           OR dangerZone.dangerZoneId = :dangerZoneId)
-                      AND (:reporterId IS NULL
-                           OR reporter.userId = :reporterId)
-                      AND (:startDate IS NULL
-                           OR report.reportedAt >= :startDate)
-                      AND (:endDate IS NULL
-                           OR report.reportedAt <= :endDate)
-                    """
+                SELECT COUNT(report)
+                FROM EmergencyReport report
+                JOIN report.user reporter
+                JOIN report.dangerZone dangerZone
+                WHERE (:status IS NULL
+                       OR report.reportStatus = :status)
+                  AND (:isFalseReport IS NULL
+                       OR report.isFalseReport = :isFalseReport)
+                  AND (:dangerZoneId IS NULL
+                       OR dangerZone.dangerZoneId = :dangerZoneId)
+                  AND (:reporterId IS NULL
+                       OR reporter.userId = :reporterId)
+                  AND (
+                        :keyword IS NULL
+                        OR LOWER(COALESCE(report.description, ''))
+                           LIKE LOWER(CONCAT('%', :keyword, '%'))
+                        OR LOWER(COALESCE(reporter.nickname, ''))
+                           LIKE LOWER(CONCAT('%', :keyword, '%'))
+                        OR LOWER(COALESCE(reporter.username, ''))
+                           LIKE LOWER(CONCAT('%', :keyword, '%'))
+                      )
+                  AND (:startDate IS NULL
+                       OR report.reportedAt >= :startDate)
+                  AND (:endDate IS NULL
+                       OR report.reportedAt <= :endDate)
+                """
     )
     Page<EmergencyReport> findAdminEmergencyReports(
             @Param("status")
@@ -96,6 +114,9 @@ public interface EmergencyReportRepository
 
             @Param("reporterId")
             Long reporterId,
+
+            @Param("keyword")
+            String keyword,
 
             @Param("startDate")
             LocalDateTime startDate,
