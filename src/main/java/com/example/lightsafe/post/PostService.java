@@ -73,32 +73,65 @@ public class PostService {
     // 1) 커뮤니티 목록 (공지 3개 상단 고정 + 일반글 페이지네이션)
     // =========================================================
     @Transactional(readOnly = true)
-    public CommunityPostsResponse getCommunity(int page, int size) {
-        int safePage = Math.max(page, 0);
-        int safeSize = (size <= 0) ? 10 : size;
+    public CommunityPostsResponse getCommunity(
+            int page,
+            int size,
+            String sort
+    ) {
+        int safePage =
+                Math.max(
+                        page,
+                        0
+                );
 
-        List<PostListResponse> notices = postRepository
-                .findTop3ByIsNoticeTrueOrderByCreatedAtDesc()
-                .stream()
-                .map(PostListResponse::from)
-                .toList();
+        int safeSize =
+                size <= 0
+                        ? 10
+                        : size;
 
-        Pageable pageable = PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<Post> postPage = postRepository.findByIsNoticeFalse(pageable);
+        List<PostListResponse> notices =
+                postRepository
+                        .findTop3ByIsNoticeTrueOrderByCreatedAtDesc()
+                        .stream()
+                        .map(PostListResponse::from)
+                        .toList();
 
-        List<PostListResponse> items = postPage.getContent()
-                .stream()
-                .map(PostListResponse::from)
-                .toList();
+        Sort sortSpec =
+                buildSearchSort(
+                        sort
+                );
 
-        PostPageInfo pageInfo = new PostPageInfo(
-                postPage.getNumber(),
-                postPage.getSize(),
-                postPage.getTotalElements(),
-                postPage.getTotalPages()
+        Pageable pageable =
+                PageRequest.of(
+                        safePage,
+                        safeSize,
+                        sortSpec
+                );
+
+        Page<Post> postPage =
+                postRepository.findByIsNoticeFalse(
+                        pageable
+                );
+
+        List<PostListResponse> items =
+                postPage.getContent()
+                        .stream()
+                        .map(PostListResponse::from)
+                        .toList();
+
+        PostPageInfo pageInfo =
+                new PostPageInfo(
+                        postPage.getNumber(),
+                        postPage.getSize(),
+                        postPage.getTotalElements(),
+                        postPage.getTotalPages()
+                );
+
+        return new CommunityPostsResponse(
+                notices,
+                items,
+                pageInfo
         );
-
-        return new CommunityPostsResponse(notices, items, pageInfo);
     }
 
     @Transactional(readOnly = true)
