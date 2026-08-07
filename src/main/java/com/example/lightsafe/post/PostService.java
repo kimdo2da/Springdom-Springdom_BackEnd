@@ -417,9 +417,16 @@ public class PostService {
         Comment target = commentRepository.findById(commentId)
                 .orElseThrow(() -> new NotFoundException("존재하지 않는 댓글입니다. id=" + commentId));
 
-        User user = userService.getCurrentUser();
-        if (user == null || !Objects.equals(target.getUser().getUserId(), user.getUserId())) {
-            throw new ForbiddenException("본인의 댓글만 삭제할 수 있습니다.");
+        User user =
+                userService.getCurrentUser();
+
+        if (!isOwnerOrAdmin(
+                user,
+                target.getUser()
+        )) {
+            throw new ForbiddenException(
+                    "댓글을 삭제할 권한이 없습니다."
+            );
         }
 
         if (!Objects.equals(target.getPost().getPostId(), postId)) {
@@ -759,9 +766,16 @@ public class PostService {
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new NotFoundException("존재하지 않는 게시글입니다. id=" + postId));
 
-        User user = userService.getCurrentUser();
-        if (user == null || !Objects.equals(post.getUser().getUserId(), user.getUserId())) {
-            throw new ForbiddenException("본인의 게시글만 삭제할 수 있습니다.");
+        User user =
+                userService.getCurrentUser();
+
+        if (!isOwnerOrAdmin(
+                user,
+                post.getUser()
+        )) {
+            throw new ForbiddenException(
+                    "게시글을 삭제할 권한이 없습니다."
+            );
         }
 
         //충돌 방지 댓글 먼저 삭제
@@ -913,7 +927,26 @@ public class PostService {
 
         return admin;
     }
+    //관리자 게시글/댓글삭제
+    private boolean isOwnerOrAdmin(User currentUser, User owner) {
+        if (currentUser == null) {
+            return false;
+        }
 
+        boolean isAdmin =
+                "ADMIN".equalsIgnoreCase(
+                        currentUser.getRole()
+                );
+
+        boolean isOwner =
+                owner != null
+                        && Objects.equals(
+                        owner.getUserId(),
+                        currentUser.getUserId()
+                );
+
+        return isOwner || isAdmin;
+    }
 
     // 공지사항 엔티티 공통 생성
     private Post buildNotice(
