@@ -66,6 +66,19 @@ public class EmergencyReportController {
     }
 
     @PreAuthorize("hasRole('ADMIN')")
+    @PatchMapping("/{reportId}/false-report/cancel")
+    public ResponseEntity<ApiResponse<EmergencyReportResponse>> cancelFalseReport(
+            @PathVariable Long reportId
+    ) {
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        emergencyReportService.cancelFalseReport(reportId),
+                        "FALSE_REPORT_CANCELLED"
+                )
+        );
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
     @PatchMapping("/{reportId}/status")
     public ResponseEntity<ApiResponse<EmergencyReportResponse>> updateReportStatus(
             @PathVariable Long reportId,
