@@ -264,10 +264,27 @@ public class EmergencyReportService {
                                 )
                         );
 
-        report.setReportStatus(
+        EmergencyReportStatus normalizedStatus =
                 normalizeReportStatus(
                         request.reportStatus()
-                )
+                );
+
+        if (normalizedStatus == EmergencyReportStatus.FALSE) {
+            throw new BadRequestException(
+                    "허위신고 처리는 false-report API를 사용해주세요."
+            );
+        }
+
+        if (Boolean.TRUE.equals(
+                report.getIsFalseReport()
+        )) {
+            throw new BadRequestException(
+                    "허위신고로 확정된 신고는 false-report/cancel API로만 되돌릴 수 있습니다."
+            );
+        }
+
+        report.setReportStatus(
+                normalizedStatus
         );
 
         updateDangerZoneLevelAndCount(
@@ -303,6 +320,43 @@ public class EmergencyReportService {
         return EmergencyReportResponse.from(report);
     }
 
+    @Transactional
+    public EmergencyReportResponse cancelFalseReport(Long reportId) {
+        EmergencyReport report =
+                emergencyReportRepository.findById(reportId)
+                        .orElseThrow(() ->
+                                new NotFoundException(
+                                        "존재하지 않는 신고입니다. id=" + reportId
+                                )
+                        );
+
+        if (!Boolean.TRUE.equals(
+                report.getIsFalseReport()
+        )) {
+            throw new BadRequestException(
+                    "허위신고로 확정된 신고가 아닙니다."
+            );
+        }
+
+        report.setIsFalseReport(
+                false
+        );
+
+        report.setReportStatus(
+                EmergencyReportStatus.RECEIVED
+        );
+
+        cancelFalseReportPenalty(
+                report.getUser()
+        );
+
+        updateDangerZoneLevelAndCount(
+                report.getDangerZone()
+        );
+
+        return EmergencyReportResponse.from(report);
+    }
+
     private void applyFalseReportPenalty(User reporter) {
         Integer currentCount =
                 reporter.getFalseReportCount();
@@ -314,6 +368,31 @@ public class EmergencyReportService {
 
         if (nextCount >= 3) {
             reporter.setBlacklisted(true);
+        }
+    }
+
+    private void cancelFalseReportPenalty(User reporter) {
+        if (reporter == null) {
+            return;
+        }
+
+        int currentCount =
+                reporter.getFalseReportCount();
+
+        int nextCount =
+                Math.max(
+                        0,
+                        currentCount - 1
+                );
+
+        reporter.setFalseReportCount(
+                nextCount
+        );
+
+        if (nextCount < 3) {
+            reporter.setBlacklisted(
+                    false
+            );
         }
     }
 

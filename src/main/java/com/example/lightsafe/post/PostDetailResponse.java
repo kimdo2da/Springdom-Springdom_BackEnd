@@ -7,6 +7,7 @@ public record PostDetailResponse(
         Long postId,
         String title,
         String content,
+        String category,
         Long userId,
         String nickname,
         Integer viewCount,

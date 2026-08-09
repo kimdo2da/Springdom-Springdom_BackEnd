@@ -273,6 +273,7 @@ public class PostService {
                 post.getPostId(),
                 post.getTitle(),
                 post.getContent(),
+                post.getCategory(),
                 post.getUser().getUserId(),
                 post.getUser().getNickname(),
                 post.getViewCount(),
