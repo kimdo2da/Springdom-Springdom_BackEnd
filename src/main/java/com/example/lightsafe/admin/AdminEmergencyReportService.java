@@ -31,6 +31,7 @@ public class AdminEmergencyReportService {
             Boolean isFalseReport,
             Long dangerZoneId,
             Long reporterId,
+            String keyword,
             LocalDateTime startDate,
             LocalDateTime endDate
     ) {
@@ -40,6 +41,11 @@ public class AdminEmergencyReportService {
 
         EmergencyReportStatus normalizedStatus =
                 normalizeStatus(status);
+
+        String normalizedKeyword =
+                normalizeKeyword(
+                        keyword
+                );
 
         PageRequest pageable =
                 PageRequest.of(
@@ -54,6 +60,7 @@ public class AdminEmergencyReportService {
                                 isFalseReport,
                                 dangerZoneId,
                                 reporterId,
+                                normalizedKeyword,
                                 startDate,
                                 endDate,
                                 pageable
@@ -121,6 +128,18 @@ public class AdminEmergencyReportService {
                     "startDate는 endDate보다 늦을 수 없습니다."
             );
         }
+    }
+
+    private String normalizeKeyword(
+            String keyword
+    ) {
+        if (keyword == null
+                || keyword.isBlank()) {
+
+            return null;
+        }
+
+        return keyword.trim();
     }
 
     private EmergencyReportStatus normalizeStatus(

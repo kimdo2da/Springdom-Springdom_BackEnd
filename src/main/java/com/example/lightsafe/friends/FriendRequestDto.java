@@ -6,5 +6,8 @@ import lombok.Setter;
 @Getter
 @Setter
 public class FriendRequestDto {
-    private Long targetUserId; // 친구 요청을 보낼 대상의 유저 ID
+
+    private Long targetUserId; // 기존 방식 유지
+
+    private String targetUsername; // 아이디(username)로 친구 요청
 }

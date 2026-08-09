@@ -25,12 +25,21 @@ public class RouteService {
 
     private static final String TMAP_PEDESTRIAN_ROUTE_URL =
             "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1";
-
     private static final double SAFETY_SEARCH_RADIUS_METERS =
+            50.0;
+
+    private static final double DUPLICATE_ROUTE_DISTANCE_DIFF_RATIO =
+            0.05;
+
+    private static final double DUPLICATE_ROUTE_ENDPOINT_THRESHOLD_METERS =
+            30.0;
+
+    private static final double DUPLICATE_ROUTE_MIDPOINT_THRESHOLD_METERS =
             50.0;
 
     private static final int[] TMAP_SEARCH_OPTIONS =
             {0, 4, 10};
+
 
     @Value("${tmap.api.key:}")
     private String tmapApiKey;
@@ -78,7 +87,8 @@ public class RouteService {
 
             if (isDuplicateRoute(
                     results,
-                    route
+                    route,
+                    searchOption
             )) {
                 continue;
             }
@@ -224,6 +234,10 @@ public class RouteService {
                     extractPathFromTmapJson(
                             root
                     );
+            double tmapTotalDistance =
+                    extractTmapTotalDistance(
+                            root
+                    );
 
             if (path == null
                     || path.isEmpty()) {
@@ -246,6 +260,20 @@ public class RouteService {
             analyzeSafetyData(
                     route,
                     path
+            );
+            log.info(
+                    "TMAP 경로 후보. searchOption={}, tmapTotalDistanceMeter={}, calculatedDistanceMeter={}, pathPointCount={}, safetyScore={}",
+                    searchOption,
+                    Math.round(
+                            tmapTotalDistance
+                    ),
+                    Math.round(
+                            calculatePathDistance(
+                                    path
+                            )
+                    ),
+                    path.size(),
+                    route.getSafetyScore()
             );
 
             return route;
@@ -336,6 +364,43 @@ public class RouteService {
         }
 
         return path;
+    }
+    private double extractTmapTotalDistance(
+            JsonNode root
+    ) {
+        try {
+            JsonNode features =
+                    root.path(
+                            "features"
+                    );
+
+            if (features.isMissingNode()
+                    || !features.isArray()) {
+
+                return 0.0;
+            }
+
+            for (JsonNode feature : features) {
+                JsonNode totalDistance =
+                        feature.path(
+                                "properties"
+                        ).path(
+                                "totalDistance"
+                        );
+
+                if (totalDistance.isNumber()) {
+                    return totalDistance.asDouble();
+                }
+            }
+
+        } catch (Exception e) {
+            log.warn(
+                    "TMAP 응답에서 totalDistance를 추출하는 중 문제가 발생했습니다.",
+                    e
+            );
+        }
+
+        return 0.0;
     }
 
     private void addPoint(
@@ -460,25 +525,322 @@ public class RouteService {
 
     private boolean isDuplicateRoute(
             List<RouteDto> routes,
-            RouteDto candidate
+            RouteDto candidate,
+            int searchOption
     ) {
-        for (RouteDto route : routes) {
-            if (route.getPath() == null
-                    || candidate.getPath() == null) {
+        if (routes == null
+                || routes.isEmpty()
+                || candidate == null
+                || candidate.getPath() == null
+                || candidate.getPath().isEmpty()) {
+
+            return false;
+        }
+
+        for (int i = 0; i < routes.size(); i++) {
+            RouteDto route =
+                    routes.get(
+                            i
+                    );
+
+            if (route == null
+                    || route.getPath() == null
+                    || route.getPath().isEmpty()) {
 
                 continue;
             }
 
-            if (route.getPath().size()
-                    == candidate.getPath().size()) {
+            if (isSameRoute(
+                    route.getPath(),
+                    candidate.getPath()
+            )) {
+                log.info(
+                        "TMAP 경로 중복 제거. searchOption={}, duplicatedWithIndex={}, candidateDistanceMeter={}, candidatePathPointCount={}",
+                        searchOption,
+                        i,
+                        Math.round(
+                                calculatePathDistance(
+                                        candidate.getPath()
+                                )
+                        ),
+                        candidate.getPath().size()
+                );
 
                 return true;
             }
         }
 
+        log.info(
+                "TMAP 경로 후보 채택. searchOption={}, acceptedCountBefore={}, candidateDistanceMeter={}, candidatePathPointCount={}",
+                searchOption,
+                routes.size(),
+                Math.round(
+                        calculatePathDistance(
+                                candidate.getPath()
+                        )
+                ),
+                candidate.getPath().size()
+        );
+
         return false;
     }
+    private boolean isSameRoute(
+            List<LocationDto> firstPath,
+            List<LocationDto> secondPath
+    ) {
+        if (firstPath == null
+                || secondPath == null
+                || firstPath.size() < 2
+                || secondPath.size() < 2) {
 
+            return false;
+        }
+
+        LocationDto firstStart =
+                firstPath.get(
+                        0
+                );
+
+        LocationDto secondStart =
+                secondPath.get(
+                        0
+                );
+
+        LocationDto firstEnd =
+                firstPath.get(
+                        firstPath.size() - 1
+                );
+
+        LocationDto secondEnd =
+                secondPath.get(
+                        secondPath.size() - 1
+                );
+
+        if (getDistance(
+                firstStart.getLatitude(),
+                firstStart.getLongitude(),
+                secondStart.getLatitude(),
+                secondStart.getLongitude()
+        ) > DUPLICATE_ROUTE_ENDPOINT_THRESHOLD_METERS) {
+
+            return false;
+        }
+
+        if (getDistance(
+                firstEnd.getLatitude(),
+                firstEnd.getLongitude(),
+                secondEnd.getLatitude(),
+                secondEnd.getLongitude()
+        ) > DUPLICATE_ROUTE_ENDPOINT_THRESHOLD_METERS) {
+
+            return false;
+        }
+
+        double firstDistance =
+                calculatePathDistance(
+                        firstPath
+                );
+
+        double secondDistance =
+                calculatePathDistance(
+                        secondPath
+                );
+
+        double maxDistance =
+                Math.max(
+                        firstDistance,
+                        secondDistance
+                );
+
+        if (maxDistance <= 0) {
+            return false;
+        }
+
+        double distanceDiffRatio =
+                Math.abs(
+                        firstDistance - secondDistance
+                ) / maxDistance;
+
+        if (distanceDiffRatio
+                > DUPLICATE_ROUTE_DISTANCE_DIFF_RATIO) {
+
+            return false;
+        }
+
+        return isSameRoutePointAtRatio(
+                firstPath,
+                secondPath,
+                0.25
+        )
+                && isSameRoutePointAtRatio(
+                firstPath,
+                secondPath,
+                0.50
+        )
+                && isSameRoutePointAtRatio(
+                firstPath,
+                secondPath,
+                0.75
+        );
+    }
+    private boolean isSameRoutePointAtRatio(
+            List<LocationDto> firstPath,
+            List<LocationDto> secondPath,
+            double ratio
+    ) {
+        LocationDto firstPoint =
+                getPointAtDistanceRatio(
+                        firstPath,
+                        ratio
+                );
+
+        LocationDto secondPoint =
+                getPointAtDistanceRatio(
+                        secondPath,
+                        ratio
+                );
+
+        if (firstPoint == null
+                || secondPoint == null) {
+
+            return false;
+        }
+
+        double distance =
+                getDistance(
+                        firstPoint.getLatitude(),
+                        firstPoint.getLongitude(),
+                        secondPoint.getLatitude(),
+                        secondPoint.getLongitude()
+                );
+
+        return distance <= DUPLICATE_ROUTE_MIDPOINT_THRESHOLD_METERS;
+    }
+    private LocationDto getPointAtDistanceRatio(
+            List<LocationDto> path,
+            double ratio
+    ) {
+        if (path == null
+                || path.isEmpty()) {
+
+            return null;
+        }
+
+        if (path.size() == 1) {
+            return path.get(
+                    0
+            );
+        }
+
+        double totalDistance =
+                calculatePathDistance(
+                        path
+                );
+
+        if (totalDistance <= 0) {
+            return path.get(
+                    0
+            );
+        }
+
+        double targetDistance =
+                totalDistance * ratio;
+
+        double accumulatedDistance =
+                0.0;
+
+        for (int i = 1; i < path.size(); i++) {
+            LocationDto previous =
+                    path.get(
+                            i - 1
+                    );
+
+            LocationDto current =
+                    path.get(
+                            i
+                    );
+
+            double segmentDistance =
+                    getDistance(
+                            previous.getLatitude(),
+                            previous.getLongitude(),
+                            current.getLatitude(),
+                            current.getLongitude()
+                    );
+
+            if (segmentDistance <= 0) {
+                continue;
+            }
+
+            if (accumulatedDistance + segmentDistance
+                    >= targetDistance) {
+
+                double segmentRatio =
+                        (targetDistance - accumulatedDistance)
+                                / segmentDistance;
+
+                double latitude =
+                        previous.getLatitude()
+                                + (
+                                current.getLatitude()
+                                        - previous.getLatitude()
+                        ) * segmentRatio;
+
+                double longitude =
+                        previous.getLongitude()
+                                + (
+                                current.getLongitude()
+                                        - previous.getLongitude()
+                        ) * segmentRatio;
+
+                return new LocationDto(
+                        latitude,
+                        longitude
+                );
+            }
+
+            accumulatedDistance +=
+                    segmentDistance;
+        }
+
+        return path.get(
+                path.size() - 1
+        );
+    }
+    private double calculatePathDistance(
+            List<LocationDto> path
+    ) {
+        if (path == null
+                || path.size() < 2) {
+
+            return 0.0;
+        }
+
+        double totalDistance =
+                0.0;
+
+        for (int i = 1; i < path.size(); i++) {
+            LocationDto previous =
+                    path.get(
+                            i - 1
+                    );
+
+            LocationDto current =
+                    path.get(
+                            i
+                    );
+
+            totalDistance +=
+                    getDistance(
+                            previous.getLatitude(),
+                            previous.getLongitude(),
+                            current.getLatitude(),
+                            current.getLongitude()
+                    );
+        }
+
+        return totalDistance;
+    }
     private int safeSize(
             List<?> values
     ) {

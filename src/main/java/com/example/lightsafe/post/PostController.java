@@ -29,12 +29,22 @@ public class PostController {
     }
 
     // ✅ 커뮤니티 목록: 공지 3개 고정 + 일반글 페이지
+// ✅ 커뮤니티 목록: 공지 3개 고정 + 일반글 페이지
     @GetMapping("/community")
     public ResponseEntity<ApiResponse<CommunityPostsResponse>> getCommunity(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "latest") String sort
     ) {
-        return ResponseEntity.ok(ApiResponse.ok(postService.getCommunity(page, size)));
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        postService.getCommunity(
+                                page,
+                                size,
+                                sort
+                        )
+                )
+        );
     }
 
     // ✅ 카테고리별 최신글 5개씩 요약 (NOTICE, QUESTION, INFO)

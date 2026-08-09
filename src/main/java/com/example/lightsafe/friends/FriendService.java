@@ -84,13 +84,7 @@ public class FriendService {
      * 2. 친구 요청 보내기
      * 자기 자신 검증 및 중복 요청(이미 친구이거나 대기 중)을 체크한 후 PENDING 상태로 저장합니다.
      */
-    public void sendFriendRequest(Long loginUserId, Long targetUserId) {
-        if (loginUserId.equals(targetUserId)) {
-            throw new BadRequestException(
-                    "자기 자신에게 친구 요청을 보낼 수 없습니다."
-            );
-        }
-
+    public void sendFriendRequest(Long loginUserId, FriendRequestDto request) {
         User sender = userRepository.findById(loginUserId)
                 .orElseThrow(() ->
                         new NotFoundException(
@@ -98,12 +92,19 @@ public class FriendService {
                         )
                 );
 
-        User receiver = userRepository.findById(targetUserId)
-                .orElseThrow(() ->
-                        new NotFoundException(
-                                "존재하지 않는 수신 유저입니다."
-                        )
+        User receiver =
+                findFriendRequestReceiver(
+                        request
                 );
+
+        if (Objects.equals(
+                sender.getUserId(),
+                receiver.getUserId()
+        )) {
+            throw new BadRequestException(
+                    "자기 자신에게 친구 요청을 보낼 수 없습니다."
+            );
+        }
 
         Optional<Friend> existing1 =
                 friendRepository.findByUserAndFriendUser(
@@ -291,6 +292,70 @@ public class FriendService {
         friendRepository.delete(friendRelation);
     }
 
+    private User findFriendRequestReceiver(
+            FriendRequestDto request
+    ) {
+        if (request == null) {
+            throw new BadRequestException(
+                    "친구 요청 대상이 필요합니다."
+            );
+        }
+
+        boolean hasTargetUserId =
+                request.getTargetUserId() != null;
+
+        boolean hasTargetUsername =
+                request.getTargetUsername() != null
+                        && !request.getTargetUsername()
+                        .trim()
+                        .isEmpty();
+
+        if (!hasTargetUserId && !hasTargetUsername) {
+            throw new BadRequestException(
+                    "친구 요청 대상이 필요합니다."
+            );
+        }
+
+        if (hasTargetUserId && hasTargetUsername) {
+            throw new BadRequestException(
+                    "targetUserId와 targetUsername은 동시에 사용할 수 없습니다."
+            );
+        }
+
+        if (hasTargetUsername) {
+            String username =
+                    request.getTargetUsername()
+                            .trim();
+
+            return userRepository.findByUsername(
+                            username
+                    )
+                    .filter(user ->
+                            !Boolean.TRUE.equals(
+                                    user.isDeleted()
+                            )
+                    )
+                    .orElseThrow(() ->
+                            new NotFoundException(
+                                    "존재하지 않는 아이디입니다."
+                            )
+                    );
+        }
+
+        return userRepository.findById(
+                        request.getTargetUserId()
+                )
+                .filter(user ->
+                        !Boolean.TRUE.equals(
+                                user.isDeleted()
+                        )
+                )
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "존재하지 않는 수신 유저입니다."
+                        )
+                );
+    }
     /**
      * 9. 친구 쪽지 검증
      * 두 유저가 현재 실제 친구 상태(ACCEPTED)인지 사전에 검증합니다.

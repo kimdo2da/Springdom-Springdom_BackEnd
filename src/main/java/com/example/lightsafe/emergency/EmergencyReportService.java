@@ -23,6 +23,7 @@ import java.util.Objects;
 public class EmergencyReportService {
 
     private static final int DEFAULT_DANGER_RADIUS_METER = 300;
+    private static final int DANGER_ZONE_ACTIVE_HOURS = 24;
 
     private final EmergencyReportRepository emergencyReportRepository;
     private final DangerZoneRepository dangerZoneRepository;
@@ -269,6 +270,10 @@ public class EmergencyReportService {
                 )
         );
 
+        updateDangerZoneLevelAndCount(
+                report.getDangerZone()
+        );
+
         return EmergencyReportResponse.from(report);
     }
 
@@ -325,7 +330,7 @@ public class EmergencyReportService {
         dangerZone.setReportCount(0);
         dangerZone.setIsActive(true);
         dangerZone.setExpiredAt(
-                LocalDateTime.now().plusHours(24)
+                LocalDateTime.now().plusHours(DANGER_ZONE_ACTIVE_HOURS)
         );
 
         return dangerZoneRepository.save(dangerZone);
@@ -389,10 +394,18 @@ public class EmergencyReportService {
     private void updateDangerZoneLevelAndCount(
             DangerZone dangerZone
     ) {
+        if (dangerZone == null) {
+            return;
+        }
+
+        LocalDateTime now =
+                LocalDateTime.now();
+
         long validReportCount =
                 emergencyReportRepository
-                        .countByDangerZone_DangerZoneIdAndIsFalseReportFalse(
-                                dangerZone.getDangerZoneId()
+                        .countByDangerZone_DangerZoneIdAndReportStatusAndIsFalseReportFalse(
+                                dangerZone.getDangerZoneId(),
+                                EmergencyReportStatus.RECEIVED
                         );
 
         dangerZone.setReportCount(
@@ -410,15 +423,61 @@ public class EmergencyReportService {
 
             if (dangerZone.getExpiredAt() == null
                     || dangerZone.getExpiredAt()
-                    .isAfter(LocalDateTime.now())) {
+                    .isAfter(now)) {
 
                 dangerZone.setExpiredAt(
-                        LocalDateTime.now()
+                        now
                 );
             }
+
+            dangerZoneRepository.save(
+                    dangerZone
+            );
+
+            return;
         }
 
-        dangerZoneRepository.save(dangerZone);
+        /*
+         * 해결완료로 인해 비활성화된 위험구역은
+         * 다시 RECEIVED 상태가 생기면 활성화할 수 있습니다.
+         *
+         * 다만 createdAt 기준 24시간이 이미 지난 자연 만료 구역은
+         * 다시 살리지 않습니다.
+         */
+        if (!Boolean.TRUE.equals(
+                dangerZone.getIsActive()
+        ) && canReactivateDangerZone(
+                dangerZone,
+                now
+        )) {
+            dangerZone.setIsActive(
+                    true
+            );
+
+            dangerZone.setExpiredAt(
+                    now.plusHours(
+                            DANGER_ZONE_ACTIVE_HOURS
+                    )
+            );
+        }
+
+        dangerZoneRepository.save(
+                dangerZone
+        );
+    }
+    private boolean canReactivateDangerZone(
+            DangerZone dangerZone,
+            LocalDateTime now
+    ) {
+        if (dangerZone.getCreatedAt() == null) {
+            return true;
+        }
+
+        return dangerZone.getCreatedAt()
+                .plusHours(
+                        DANGER_ZONE_ACTIVE_HOURS
+                )
+                .isAfter(now);
     }
 
     private DangerLevel calculateDangerLevel(long reportCount) {

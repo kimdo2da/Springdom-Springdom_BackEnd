@@ -48,6 +48,9 @@ public class AdminEmergencyReportController {
             Long reporterId,
 
             @RequestParam(required = false)
+            String keyword,
+
+            @RequestParam(required = false)
             @DateTimeFormat(
                     iso = DateTimeFormat.ISO.DATE_TIME
             )
@@ -67,6 +70,7 @@ public class AdminEmergencyReportController {
                         isFalseReport,
                         dangerZoneId,
                         reporterId,
+                        keyword,
                         startDate,
                         endDate
                 );
