@@ -43,6 +43,21 @@ public interface EmergencyReportRepository
             EmergencyReportStatus reportStatus
     );
 
+    @Query("""
+        SELECT COUNT(DISTINCT report.user.userId)
+        FROM EmergencyReport report
+        WHERE report.dangerZone.dangerZoneId = :dangerZoneId
+          AND report.reportStatus = :status
+          AND report.isFalseReport = false
+        """)
+    long countDistinctReportersByDangerZone(
+            @Param("dangerZoneId")
+            Long dangerZoneId,
+
+            @Param("status")
+            EmergencyReportStatus status
+    );
+
     @Query(
             value = """
                 SELECT report
