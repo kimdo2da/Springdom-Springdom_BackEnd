@@ -487,13 +487,20 @@ public class EmergencyReportService {
                                 EmergencyReportStatus.RECEIVED
                         );
 
+        long validReporterCount =
+                emergencyReportRepository
+                        .countDistinctReportersByDangerZone(
+                                dangerZone.getDangerZoneId(),
+                                EmergencyReportStatus.RECEIVED
+                        );
+
         dangerZone.setReportCount(
                 (int) validReportCount
         );
 
         dangerZone.setDangerLevel(
                 calculateDangerLevel(
-                        validReportCount
+                        validReporterCount
                 )
         );
 
@@ -559,12 +566,12 @@ public class EmergencyReportService {
                 .isAfter(now);
     }
 
-    private DangerLevel calculateDangerLevel(long reportCount) {
-        if (reportCount >= 4) {
+    private DangerLevel calculateDangerLevel(long reporterCount) {
+        if (reporterCount >= 4) {
             return DangerLevel.HIGH;
         }
 
-        if (reportCount >= 2) {
+        if (reporterCount >= 2) {
             return DangerLevel.MEDIUM;
         }
 
