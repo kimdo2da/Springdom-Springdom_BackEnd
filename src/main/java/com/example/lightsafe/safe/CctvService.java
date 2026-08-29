@@ -1,151 +1,84 @@
 package com.example.lightsafe.safe;
 
-import jakarta.annotation.PostConstruct;
+import com.example.lightsafe.emergency.Cctv;
+import com.example.lightsafe.emergency.CctvRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
+/**
+ * CCTV 조회.
+ *
+ * 예전에는 서울시 CSV 한 개를 서버 기동 때 메모리에 올려 두고 4만 건을 통째로 내려줬습니다.
+ * 전국 데이터로 바꾸면서 25만 건이 되어, 지금은 표에 저장해 두고
+ * 화면 범위만큼만 잘라서 꺼냅니다.
+ */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class CctvService {
 
-    private final List<CctvDto> cachedCctvList = new ArrayList<>();
+    private static final int MAX_RESULT_SIZE = 20000;
 
-    @PostConstruct
-    public void initCctvData() {
-        log.info("서버 시작 중 CCTV 데이터 파일을 1회 로딩합니다.");
+    private final CctvRepository cctvRepository;
 
-        Set<String> uniqueLocations = new HashSet<>();
+    @Transactional(readOnly = true)
+    public List<CctvDto> getCctvsInBounds(
+            MapBounds bounds
+    ) {
+        List<Cctv> cctvs =
+                cctvRepository.findInBounds(
+                        bounds.minLatitude(),
+                        bounds.maxLatitude(),
+                        bounds.minLongitude(),
+                        bounds.maxLongitude(),
+                        PageRequest.of(0, MAX_RESULT_SIZE)
+                );
 
-        try {
-            ClassPathResource resource =
-                    new ClassPathResource(
-                            "CCTV정보_서울특별시.csv"
-                    );
+        List<CctvDto> results = new ArrayList<>(cctvs.size());
 
-            try (BufferedReader br =
-                         new BufferedReader(
-                                 new InputStreamReader(
-                                         resource.getInputStream(),
-                                         Charset.forName("MS949")
-                                 )
-                         )) {
+        for (Cctv cctv : cctvs) {
+            CctvDto dto = new CctvDto();
 
-                String line;
-                boolean isFirstLine = true;
-
-                while ((line = br.readLine()) != null) {
-                    if (isFirstLine) {
-                        isFirstLine = false;
-                        continue;
-                    }
-
-                    String[] columns =
-                            line.split(
-                                    ",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)"
-                            );
-
-                    if (columns.length < 14) {
-                        continue;
-                    }
-
-                    String roadAddr =
-                            columns[3]
-                                    .replace("\"", "")
-                                    .trim();
-
-                    String lotAddr =
-                            columns[4]
-                                    .replace("\"", "")
-                                    .trim();
-
-                    String address =
-                            roadAddr.isEmpty()
-                                    ? lotAddr
-                                    : roadAddr;
-
-                    String purpose =
-                            columns[5]
-                                    .replace("\"", "")
-                                    .trim();
-
-                    String latStr =
-                            columns[12]
-                                    .replace("\"", "")
-                                    .trim();
-
-                    String lngStr =
-                            columns[13]
-                                    .replace("\"", "")
-                                    .trim();
-
-                    if (latStr.isEmpty()
-                            || lngStr.isEmpty()
-                            || address.isEmpty()) {
-
-                        continue;
-                    }
-
-                    String locationKey =
-                            latStr + "_" + lngStr;
-
-                    if (!uniqueLocations.add(
-                            locationKey
-                    )) {
-                        continue;
-                    }
-
-                    CctvDto dto =
-                            new CctvDto();
-
-                    dto.setCctvId(
-                            (long) (cachedCctvList.size() + 1)
-                    );
-                    dto.setCctvName(
-                            address
-                    );
-                    dto.setLatitude(
-                            Double.parseDouble(
-                                    latStr
-                            )
-                    );
-                    dto.setLongitude(
-                            Double.parseDouble(
-                                    lngStr
-                            )
-                    );
-                    dto.setPurpose(
-                            purpose
-                    );
-
-                    cachedCctvList.add(
-                            dto
-                    );
-                }
-            }
-
-        } catch (Exception e) {
-            log.error(
-                    "CSV 파일 읽기 중 오류가 발생했습니다.",
-                    e
+            dto.setCctvId(cctv.getCctvId());
+            dto.setCctvName(
+                    cctv.getAddress() != null
+                            ? cctv.getAddress()
+                            : cctv.getCctvName()
             );
+            dto.setLatitude(cctv.getLatitude().doubleValue());
+            dto.setLongitude(cctv.getLongitude().doubleValue());
+            dto.setPurpose(cctv.getPurpose());
+
+            results.add(dto);
         }
 
-        log.info(
-                "CCTV 데이터 로딩 완료. 총 {}개의 위치가 메모리에 장착되었습니다.",
-                cachedCctvList.size()
+        return results;
+    }
+
+    /**
+     * 경로 주변 탐색용. 좌표만 필요해 가볍게 꺼냅니다.
+     */
+    @Transactional(readOnly = true)
+    public List<LocationDto> getCctvLocationsForRoute(
+            MapBounds bounds
+    ) {
+        return cctvRepository.findLocationsInBounds(
+                bounds.minLatitude(),
+                bounds.maxLatitude(),
+                bounds.minLongitude(),
+                bounds.maxLongitude(),
+                PageRequest.of(0, MAX_RESULT_SIZE * 5)
         );
     }
 
-    public List<CctvDto> getCctvData() {
-        return cachedCctvList;
+    @Transactional(readOnly = true)
+    public long countAll() {
+        return cctvRepository.count();
     }
 }

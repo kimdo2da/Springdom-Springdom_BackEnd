@@ -4,8 +4,10 @@ import com.example.lightsafe.common.exception.BadRequestException;
 import com.example.lightsafe.common.exception.NotFoundException;
 import com.example.lightsafe.friends.FriendService;
 import com.example.lightsafe.notification.NotificationService;
+import com.example.lightsafe.safe.MapBounds;
 import com.example.lightsafe.user.User;
 import com.example.lightsafe.user.UserRepository;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -24,6 +26,14 @@ public class EmergencyReportService {
 
     private static final int DEFAULT_DANGER_RADIUS_METER = 300;
     private static final int DANGER_ZONE_ACTIVE_HOURS = 24;
+
+    /**
+     * 가장 가까운 CCTV 를 찾을 때 넓혀 가는 반경(m).
+     */
+    private static final double[] NEAREST_CCTV_SEARCH_RADIUS_METERS =
+            {300, 1000, 5000};
+
+    private static final int NEAREST_CCTV_CANDIDATE_LIMIT = 500;
 
     private final EmergencyReportRepository emergencyReportRepository;
     private final DangerZoneRepository dangerZoneRepository;
@@ -451,23 +461,56 @@ public class EmergencyReportService {
                 .orElse(null);
     }
 
+    /**
+     * 신고 지점에서 가장 가까운 CCTV.
+     *
+     * 예전에는 findAll() 로 전건을 메모리에 올려 최솟값을 찾았습니다.
+     * CCTV 가 서울 CSV 4만 건에서 전국 25만 건으로 늘면서
+     * 신고 1건마다 25만 행을 읽게 되어, 사각 범위로 먼저 좁히도록 바꿨습니다.
+     *
+     * 가까운 순서로 범위를 넓혀 가며 찾고, 5km 안에 하나도 없으면
+     * 억지로 먼 CCTV 를 붙이지 않고 비워 둡니다.
+     */
     private Cctv findNearestCctv(
             double latitude,
             double longitude
     ) {
-        return cctvRepository.findAll()
-                .stream()
-                .min(
-                        Comparator.comparingDouble(
-                                cctv -> calculateDistanceMeter(
-                                        latitude,
-                                        longitude,
-                                        cctv.getLatitude().doubleValue(),
-                                        cctv.getLongitude().doubleValue()
-                                )
-                        )
-                )
-                .orElse(null);
+        for (double radiusMeter : NEAREST_CCTV_SEARCH_RADIUS_METERS) {
+            MapBounds bounds =
+                    MapBounds.aroundPoint(
+                            latitude,
+                            longitude,
+                            radiusMeter
+                    );
+
+            List<Cctv> candidates =
+                    cctvRepository.findNearestCandidates(
+                            bounds.minLatitude(),
+                            bounds.maxLatitude(),
+                            bounds.minLongitude(),
+                            bounds.maxLongitude(),
+                            PageRequest.of(0, NEAREST_CCTV_CANDIDATE_LIMIT)
+                    );
+
+            if (candidates.isEmpty()) {
+                continue;
+            }
+
+            return candidates.stream()
+                    .min(
+                            Comparator.comparingDouble(
+                                    cctv -> calculateDistanceMeter(
+                                            latitude,
+                                            longitude,
+                                            cctv.getLatitude().doubleValue(),
+                                            cctv.getLongitude().doubleValue()
+                                    )
+                            )
+                    )
+                    .orElse(null);
+        }
+
+        return null;
     }
 
     private void updateDangerZoneLevelAndCount(

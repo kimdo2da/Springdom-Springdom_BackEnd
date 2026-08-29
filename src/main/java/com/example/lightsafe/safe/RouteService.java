@@ -288,23 +288,12 @@ public class RouteService {
     }
 
     private List<LocationDto> findNearbyCctvLocations(List<LocationDto> path) {
-        List<CctvDto> allCctvs = cctvService.getCctvData();
-        List<LocationDto> cctvLocations = new ArrayList<>();
-        if (allCctvs == null || allCctvs.isEmpty()) return cctvLocations;
-
-        Set<Long> countedCctvIds = new HashSet<>();
-        for (LocationDto point : path) {
-            for (CctvDto cctv : allCctvs) {
-                double distance = getDistance(
-                        point.getLatitude(), point.getLongitude(),
-                        cctv.getLatitude(), cctv.getLongitude()
-                );
-                if (distance <= SAFETY_SEARCH_RADIUS_METERS && countedCctvIds.add(cctv.getCctvId())) {
-                    cctvLocations.add(new LocationDto(cctv.getLatitude(), cctv.getLongitude()));
-                }
-            }
-        }
-        return cctvLocations;
+        return findNearby(
+                cctvService.getCctvLocationsForRoute(
+                        MapBounds.around(path, SAFETY_SEARCH_RADIUS_METERS)
+                ),
+                path
+        );
     }
     private List<LocationDto> findNearbyPublicSafetyFacilities(
             List<LocationDto> path
@@ -321,25 +310,59 @@ public class RouteService {
 
     // 🔥 주변 보안등 탐색 로직
     private List<LocationDto> findNearbySecurityLights(List<LocationDto> path) {
-        List<LocationDto> allLights = securityLightService.getSecurityLightData();
-        List<LocationDto> lightLocations = new ArrayList<>();
-        if (allLights == null || allLights.isEmpty()) return lightLocations;
+        return findNearby(
+                securityLightService.getSecurityLightsForRoute(
+                        MapBounds.around(path, SAFETY_SEARCH_RADIUS_METERS)
+                ),
+                path
+        );
+    }
 
-        Set<String> countedLights = new HashSet<>();
-        for (LocationDto point : path) {
-            for (LocationDto light : allLights) {
-                double distance = getDistance(
-                        point.getLatitude(), point.getLongitude(),
-                        light.getLatitude(), light.getLongitude()
-                );
+    /**
+     * 경로에서 50m 안에 있는 지점만 골라냅니다.
+     *
+     * 예전에는 메모리에 올려 둔 전국 데이터를 '경로 점 × 전체 지점'으로 훑었습니다.
+     * 보안등이 전국 180만 개가 되면서 그 방식은 한 경로에 수억 번을 계산하게 되어,
+     * 이제는 경로를 감싸는 사각 범위로 DB 에서 먼저 좁힌 뒤 그 안에서만 거리를 잽니다.
+     */
+    private List<LocationDto> findNearby(
+            List<LocationDto> candidates,
+            List<LocationDto> path
+    ) {
+        List<LocationDto> matched = new ArrayList<>();
 
-                String lightKey = light.getLatitude() + "_" + light.getLongitude();
-                if (distance <= SAFETY_SEARCH_RADIUS_METERS && countedLights.add(lightKey)) {
-                    lightLocations.add(new LocationDto(light.getLatitude(), light.getLongitude()));
+        if (candidates == null || candidates.isEmpty()) {
+            return matched;
+        }
+
+        Set<String> counted = new HashSet<>();
+
+        for (LocationDto candidate : candidates) {
+            String key =
+                    candidate.getLatitude() + "_" + candidate.getLongitude();
+
+            if (counted.contains(key)) {
+                continue;
+            }
+
+            for (LocationDto point : path) {
+                double distance =
+                        getDistance(
+                                point.getLatitude(),
+                                point.getLongitude(),
+                                candidate.getLatitude(),
+                                candidate.getLongitude()
+                        );
+
+                if (distance <= SAFETY_SEARCH_RADIUS_METERS) {
+                    counted.add(key);
+                    matched.add(candidate);
+                    break;
                 }
             }
         }
-        return lightLocations;
+
+        return matched;
     }
 
     private boolean isDuplicateRoute(List<RouteDto> routes, RouteDto candidate, int searchOption) {
