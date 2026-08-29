@@ -27,6 +27,17 @@ public class RouteService {
             "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1";
     private static final double SAFETY_SEARCH_RADIUS_METERS =
             50.0;
+    private static final int SECURITY_LIGHT_SCORE =
+            1;
+
+    private static final int CONVENIENCE_STORE_SCORE =
+            3;
+
+    private static final int CCTV_SCORE =
+            3;
+
+    private static final int PUBLIC_SAFETY_FACILITY_SCORE =
+            4;
 
     private static final double DUPLICATE_ROUTE_DISTANCE_DIFF_RATIO =
             0.05;
@@ -81,10 +92,12 @@ public class RouteService {
             RouteDto route = results.get(i);
             route.setRouteId(i + 1);
             route.setDescription(
-                    "안전 순위 " + (i + 1) + "위 경로 (종합 안전 점수: " + route.getSafetyScore() + "점, " +
-                            "CCTV " + safeSize(route.getCctvLocations()) + "개, " +
-                            "편의점 " + safeSize(route.getStoreLocations()) + "개, " +
-                            "보안등 " + safeSize(route.getSecurityLightLocations()) + "개)"
+                    "안전 순위 " + (i + 1) + "위 경로 "
+                            + "(종합 안전 점수: " + route.getSafetyScore() + "점, "
+                            + "CCTV " + safeSize(route.getCctvLocations()) + "개×" + CCTV_SCORE + "점, "
+                            + "편의점 " + safeSize(route.getStoreLocations()) + "개×" + CONVENIENCE_STORE_SCORE + "점, "
+                            + "보안등 " + safeSize(route.getSecurityLightLocations()) + "개×" + SECURITY_LIGHT_SCORE + "점, "
+                            + "치안시설 0개×" + PUBLIC_SAFETY_FACILITY_SCORE + "점)"
             );
         }
 
@@ -215,22 +228,63 @@ public class RouteService {
         }
     }
 
-    // 🔥 안전도 분석 로직에 보안등 추가
-    private void analyzeSafetyData(RouteDto route, List<LocationDto> path) {
-        List<LocationDto> cctvLocations = findNearbyCctvLocations(path);
-        List<LocationDto> storeLocations = kakaoLocalService.getConvenienceStores(path);
-        List<LocationDto> lightLocations = findNearbySecurityLights(path);
+    // 🔥 안전도 분석 로직
+    private void analyzeSafetyData(
+            RouteDto route,
+            List<LocationDto> path
+    ) {
+        List<LocationDto> cctvLocations =
+                findNearbyCctvLocations(path);
+
+        List<LocationDto> storeLocations =
+                kakaoLocalService.getConvenienceStores(path);
+
+        List<LocationDto> lightLocations =
+                findNearbySecurityLights(path);
+
+        /*
+         * 치안시설은 아직 데이터/API가 연결되지 않았기 때문에
+         * 현재는 빈 목록으로 처리합니다.
+         *
+         * 추후 치안시설 서비스가 구현되면
+         * findNearbyPublicSafetyFacilities(path) 내부만 실제 조회 로직으로 교체하면 됩니다.
+         */
+        List<LocationDto> publicSafetyFacilityLocations =
+                findNearbyPublicSafetyFacilities(path);
 
         route.setCctvLocations(cctvLocations);
         route.setStoreLocations(storeLocations);
         route.setSecurityLightLocations(lightLocations);
 
-        route.setSafetyScore(
-                cctvLocations.size() + storeLocations.size() + lightLocations.size()
-        );
+        int safetyScore =
+                calculateWeightedSafetyScore(
+                        cctvLocations,
+                        storeLocations,
+                        lightLocations,
+                        publicSafetyFacilityLocations
+                );
 
-        log.info("경로 안전도 분석 완료. safetyScore={}, cctvCount={}, storeCount={}, lightCount={}",
-                route.getSafetyScore(), cctvLocations.size(), storeLocations.size(), lightLocations.size());
+        route.setSafetyScore(safetyScore);
+
+        log.info(
+                "경로 안전도 분석 완료. safetyScore={}, cctvCount={}, storeCount={}, lightCount={}, publicSafetyFacilityCount={}",
+                route.getSafetyScore(),
+                cctvLocations.size(),
+                storeLocations.size(),
+                lightLocations.size(),
+                publicSafetyFacilityLocations.size()
+        );
+    }
+    private int calculateWeightedSafetyScore(
+            List<LocationDto> cctvLocations,
+            List<LocationDto> storeLocations,
+            List<LocationDto> lightLocations,
+            List<LocationDto> publicSafetyFacilityLocations
+    ) {
+        return safeSize(cctvLocations) * CCTV_SCORE
+                + safeSize(storeLocations) * CONVENIENCE_STORE_SCORE
+                + safeSize(lightLocations) * SECURITY_LIGHT_SCORE
+                + safeSize(publicSafetyFacilityLocations) * PUBLIC_SAFETY_FACILITY_SCORE;
     }
 
     private List<LocationDto> findNearbyCctvLocations(List<LocationDto> path) {
@@ -251,6 +305,18 @@ public class RouteService {
             }
         }
         return cctvLocations;
+    }
+    private List<LocationDto> findNearbyPublicSafetyFacilities(
+            List<LocationDto> path
+    ) {
+        /*
+         * TODO:
+         * 치안시설 데이터가 연결되면 이 메서드에서
+         * 경로 주변 50m 이내 치안시설 좌표를 찾아 반환하도록 구현합니다.
+         *
+         * 현재는 미구현 상태이므로 빈 목록을 반환합니다.
+         */
+        return List.of();
     }
 
     // 🔥 주변 보안등 탐색 로직
