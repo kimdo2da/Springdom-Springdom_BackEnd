@@ -91,7 +91,7 @@ public class PublicDataSyncService {
     /**
      * 지오코딩 대기열을 조금씩 비웁니다.
      *
-     * 카카오 일일 한도 때문에 한 번에 다 못 하므로 주기적으로 이어서 처리합니다.
+     * 브이월드·카카오 모두 일일 한도가 있어 한 번에 다 못 하므로 주기적으로 이어서 처리합니다.
      */
     @Scheduled(
             initialDelayString = "${publicdata.geocoding.drain-interval-millis:3600000}",
@@ -318,7 +318,7 @@ public class PublicDataSyncService {
             history.setQueuedCount(counters[2]);
 
             /*
-             * 좌표를 채우는 작업은 카카오 한도에 걸려 한 번에 안 끝날 수 있습니다.
+             * 좌표를 채우는 작업은 지오코딩 일일 한도에 걸려 한 번에 안 끝날 수 있습니다.
              * 여기서 한도만큼 처리하고, 남은 것은 주기 작업이 이어서 처리합니다.
              */
             int geocoded = geocodingService.drainQueue();
