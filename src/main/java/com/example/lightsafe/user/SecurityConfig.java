@@ -101,6 +101,8 @@ public class SecurityConfig {
                                         "/map.html",
                                         "/cctvs",
                                         "/cctvs/**",
+                                        "/security-lights",
+                                        "/security-lights/**",
                                         "/routes"
                                 )
                                 .permitAll()
