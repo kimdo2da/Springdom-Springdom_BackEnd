@@ -25,6 +25,9 @@ public class RouteDto {
     // 🔥 경로 주변 보안등 위치 목록 추가
     private List<LocationDto> securityLightLocations;
 
+    // 경로 주변 치안시설 위치 목록
+    private List<LocationDto> policeFacilityLocations;
+
     public RouteDto(
             int routeId,
             List<LocationDto> path,
@@ -44,7 +47,8 @@ public class RouteDto {
             String description,
             List<LocationDto> cctvLocations,
             List<LocationDto> storeLocations,
-            List<LocationDto> securityLightLocations
+            List<LocationDto> securityLightLocations,
+            List<LocationDto> policeFacilityLocations
     ) {
         this.routeId = routeId;
         this.path = path;
@@ -53,5 +57,6 @@ public class RouteDto {
         this.cctvLocations = cctvLocations;
         this.storeLocations = storeLocations;
         this.securityLightLocations = securityLightLocations;
+        this.policeFacilityLocations = policeFacilityLocations;
     }
 }
