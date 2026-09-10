@@ -2,6 +2,7 @@ package com.example.lightsafe.safe;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.lightsafe.emergency.Cctv;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -332,23 +333,72 @@ public class RouteService {
     ) {
     }
 
-    private List<LocationDto> findNearbyCctvLocations(List<LocationDto> path) {
-        List<CctvDto> allCctvs = cctvService.getCctvData();
-        List<LocationDto> cctvLocations = new ArrayList<>();
-        if (allCctvs == null || allCctvs.isEmpty()) return cctvLocations;
+    private List<LocationDto> findNearbyCctvLocations(
+            List<LocationDto> path
+    ) {
+        List<LocationDto> cctvLocations =
+                new ArrayList<>();
 
-        Set<Long> countedCctvIds = new HashSet<>();
-        for (LocationDto point : path) {
-            for (CctvDto cctv : allCctvs) {
-                double distance = getDistance(
-                        point.getLatitude(), point.getLongitude(),
-                        cctv.getLatitude(), cctv.getLongitude()
+        if (path == null || path.isEmpty()) {
+            return cctvLocations;
+        }
+
+        RouteBoundingBox boundingBox =
+                createRouteBoundingBox(path);
+
+        List<Cctv> candidates =
+                cctvService.findInBounds(
+                        boundingBox.minLat(),
+                        boundingBox.maxLat(),
+                        boundingBox.minLng(),
+                        boundingBox.maxLng()
                 );
-                if (distance <= SAFETY_SEARCH_RADIUS_METERS && countedCctvIds.add(cctv.getCctvId())) {
-                    cctvLocations.add(new LocationDto(cctv.getLatitude(), cctv.getLongitude()));
+
+        if (candidates == null || candidates.isEmpty()) {
+            return cctvLocations;
+        }
+
+        Set<String> countedCctvLocations =
+                new HashSet<>();
+
+        for (LocationDto point : path) {
+            for (Cctv cctv : candidates) {
+                if (cctv.getLatitude() == null
+                        || cctv.getLongitude() == null) {
+
+                    continue;
+                }
+
+                double latitude =
+                        cctv.getLatitude().doubleValue();
+
+                double longitude =
+                        cctv.getLongitude().doubleValue();
+
+                double distance =
+                        getDistance(
+                                point.getLatitude(),
+                                point.getLongitude(),
+                                latitude,
+                                longitude
+                        );
+
+                String cctvLocationKey =
+                        latitude + "_" + longitude;
+
+                if (distance <= SAFETY_SEARCH_RADIUS_METERS
+                        && countedCctvLocations.add(cctvLocationKey)) {
+
+                    cctvLocations.add(
+                            new LocationDto(
+                                    latitude,
+                                    longitude
+                            )
+                    );
                 }
             }
         }
+
         return cctvLocations;
     }
     private List<LocationDto> findNearbyPublicSafetyFacilities(
