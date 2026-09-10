@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 public class SyncController {
 
     private final PoliceFacilitySyncService policeFacilitySyncService;
+    private final CctvSyncService cctvSyncService;
 
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/police-facilities")
@@ -20,6 +21,17 @@ public class SyncController {
                 ApiResponse.ok(
                         policeFacilitySyncService.syncPoliceFacilities(),
                         "치안시설 수집 완료"
+                )
+        );
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/cctvs")
+    public ResponseEntity<ApiResponse<SyncResultResponse>> syncCctvs() {
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        cctvSyncService.syncCctvs(),
+                        "CCTV 수집 완료"
                 )
         );
     }
