@@ -1,151 +1,123 @@
 package com.example.lightsafe.safe;
 
-import jakarta.annotation.PostConstruct;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.ClassPathResource;
+import com.example.lightsafe.common.exception.BadRequestException;
+import com.example.lightsafe.emergency.Cctv;
+import com.example.lightsafe.emergency.CctvRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.HashSet;
+import java.math.BigDecimal;
 import java.util.List;
-import java.util.Set;
 
-@Slf4j
 @Service
+@RequiredArgsConstructor
 public class CctvService {
 
-    private final List<CctvDto> cachedCctvList = new ArrayList<>();
+    private static final double MAX_BBOX_RANGE =
+            0.1;
 
-    @PostConstruct
-    public void initCctvData() {
-        log.info("서버 시작 중 CCTV 데이터 파일을 1회 로딩합니다.");
+    private final CctvRepository cctvRepository;
 
-        Set<String> uniqueLocations = new HashSet<>();
+    public List<CctvDto> getCctvData() {
+        return cctvRepository.findAll()
+                .stream()
+                .map(this::toDto)
+                .toList();
+    }
 
-        try {
-            ClassPathResource resource =
-                    new ClassPathResource(
-                            "CCTV정보_서울특별시.csv"
-                    );
+    public List<CctvDto> getCctvsInBounds(
+            double minLat,
+            double maxLat,
+            double minLng,
+            double maxLng
+    ) {
+        validateBounds(
+                minLat,
+                maxLat,
+                minLng,
+                maxLng
+        );
 
-            try (BufferedReader br =
-                         new BufferedReader(
-                                 new InputStreamReader(
-                                         resource.getInputStream(),
-                                         Charset.forName("MS949")
-                                 )
-                         )) {
+        return cctvRepository.findInBounds(
+                        BigDecimal.valueOf(minLat),
+                        BigDecimal.valueOf(maxLat),
+                        BigDecimal.valueOf(minLng),
+                        BigDecimal.valueOf(maxLng)
+                )
+                .stream()
+                .map(this::toDto)
+                .toList();
+    }
 
-                String line;
-                boolean isFirstLine = true;
-
-                while ((line = br.readLine()) != null) {
-                    if (isFirstLine) {
-                        isFirstLine = false;
-                        continue;
-                    }
-
-                    String[] columns =
-                            line.split(
-                                    ",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)"
-                            );
-
-                    if (columns.length < 14) {
-                        continue;
-                    }
-
-                    String roadAddr =
-                            columns[3]
-                                    .replace("\"", "")
-                                    .trim();
-
-                    String lotAddr =
-                            columns[4]
-                                    .replace("\"", "")
-                                    .trim();
-
-                    String address =
-                            roadAddr.isEmpty()
-                                    ? lotAddr
-                                    : roadAddr;
-
-                    String purpose =
-                            columns[5]
-                                    .replace("\"", "")
-                                    .trim();
-
-                    String latStr =
-                            columns[12]
-                                    .replace("\"", "")
-                                    .trim();
-
-                    String lngStr =
-                            columns[13]
-                                    .replace("\"", "")
-                                    .trim();
-
-                    if (latStr.isEmpty()
-                            || lngStr.isEmpty()
-                            || address.isEmpty()) {
-
-                        continue;
-                    }
-
-                    String locationKey =
-                            latStr + "_" + lngStr;
-
-                    if (!uniqueLocations.add(
-                            locationKey
-                    )) {
-                        continue;
-                    }
-
-                    CctvDto dto =
-                            new CctvDto();
-
-                    dto.setCctvId(
-                            (long) (cachedCctvList.size() + 1)
-                    );
-                    dto.setCctvName(
-                            address
-                    );
-                    dto.setLatitude(
-                            Double.parseDouble(
-                                    latStr
-                            )
-                    );
-                    dto.setLongitude(
-                            Double.parseDouble(
-                                    lngStr
-                            )
-                    );
-                    dto.setPurpose(
-                            purpose
-                    );
-
-                    cachedCctvList.add(
-                            dto
-                    );
-                }
-            }
-
-        } catch (Exception e) {
-            log.error(
-                    "CSV 파일 읽기 중 오류가 발생했습니다.",
-                    e
+    public List<Cctv> findInBounds(
+            double minLat,
+            double maxLat,
+            double minLng,
+            double maxLng
+    ) {
+        if (minLat > maxLat || minLng > maxLng) {
+            throw new BadRequestException(
+                    "지도 범위 값이 올바르지 않습니다."
             );
         }
 
-        log.info(
-                "CCTV 데이터 로딩 완료. 총 {}개의 위치가 메모리에 장착되었습니다.",
-                cachedCctvList.size()
+        if (minLat < -90 || maxLat > 90
+                || minLng < -180 || maxLng > 180) {
+
+            throw new BadRequestException(
+                    "위도 또는 경도 값이 올바르지 않습니다."
+            );
+        }
+
+        return cctvRepository.findInBounds(
+                BigDecimal.valueOf(minLat),
+                BigDecimal.valueOf(maxLat),
+                BigDecimal.valueOf(minLng),
+                BigDecimal.valueOf(maxLng)
         );
     }
 
-    public List<CctvDto> getCctvData() {
-        return cachedCctvList;
+    private CctvDto toDto(
+            Cctv cctv
+    ) {
+        CctvDto dto =
+                new CctvDto();
+
+        dto.setCctvId(cctv.getCctvId());
+        dto.setCctvName(cctv.getCctvName());
+        dto.setLatitude(cctv.getLatitude().doubleValue());
+        dto.setLongitude(cctv.getLongitude().doubleValue());
+        dto.setPurpose(cctv.getPurpose());
+
+        return dto;
+    }
+
+    private void validateBounds(
+            double minLat,
+            double maxLat,
+            double minLng,
+            double maxLng
+    ) {
+        if (minLat > maxLat || minLng > maxLng) {
+            throw new BadRequestException(
+                    "지도 범위 값이 올바르지 않습니다."
+            );
+        }
+
+        if (maxLat - minLat > MAX_BBOX_RANGE
+                || maxLng - minLng > MAX_BBOX_RANGE) {
+
+            throw new BadRequestException(
+                    "조회 범위가 너무 넓습니다."
+            );
+        }
+
+        if (minLat < -90 || maxLat > 90
+                || minLng < -180 || maxLng > 180) {
+
+            throw new BadRequestException(
+                    "위도 또는 경도 값이 올바르지 않습니다."
+            );
+        }
     }
 }

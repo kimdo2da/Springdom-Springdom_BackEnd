@@ -103,6 +103,8 @@ public class SecurityConfig {
                                         "/cctvs/**",
                                         "/security-lights",
                                         "/security-lights/**",
+                                        "/police-facilities",
+                                        "/police-facilities/**",
                                         "/routes"
                                 )
                                 .permitAll()

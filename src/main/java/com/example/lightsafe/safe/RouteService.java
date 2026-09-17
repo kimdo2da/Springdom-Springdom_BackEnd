@@ -2,6 +2,7 @@ package com.example.lightsafe.safe;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.lightsafe.emergency.Cctv;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -57,6 +58,7 @@ public class RouteService {
     private final CctvService cctvService;
     private final KakaoLocalService kakaoLocalService;
     private final SecurityLightService securityLightService; // 🔥 보안등 서비스 주입
+    private final PoliceFacilityService policeFacilityService;
 
     public List<RouteDto> getTop3SafeRoutes(
             RouteRequestDto request
@@ -97,7 +99,7 @@ public class RouteService {
                             + "CCTV " + safeSize(route.getCctvLocations()) + "개×" + CCTV_SCORE + "점, "
                             + "편의점 " + safeSize(route.getStoreLocations()) + "개×" + CONVENIENCE_STORE_SCORE + "점, "
                             + "보안등 " + safeSize(route.getSecurityLightLocations()) + "개×" + SECURITY_LIGHT_SCORE + "점, "
-                            + "치안시설 0개×" + PUBLIC_SAFETY_FACILITY_SCORE + "점)"
+                            + "치안시설 " + safeSize(route.getPoliceFacilityLocations()) + "개×" + PUBLIC_SAFETY_FACILITY_SCORE + "점)"
             );
         }
 
@@ -242,37 +244,31 @@ public class RouteService {
         List<LocationDto> lightLocations =
                 findNearbySecurityLights(path);
 
-        /*
-         * 치안시설은 아직 데이터/API가 연결되지 않았기 때문에
-         * 현재는 빈 목록으로 처리합니다.
-         *
-         * 추후 치안시설 서비스가 구현되면
-         * findNearbyPublicSafetyFacilities(path) 내부만 실제 조회 로직으로 교체하면 됩니다.
-         */
-        List<LocationDto> publicSafetyFacilityLocations =
+        List<LocationDto> policeFacilityLocations =
                 findNearbyPublicSafetyFacilities(path);
 
         route.setCctvLocations(cctvLocations);
         route.setStoreLocations(storeLocations);
         route.setSecurityLightLocations(lightLocations);
+        route.setPoliceFacilityLocations(policeFacilityLocations);
 
         int safetyScore =
                 calculateWeightedSafetyScore(
                         cctvLocations,
                         storeLocations,
                         lightLocations,
-                        publicSafetyFacilityLocations
+                        policeFacilityLocations
                 );
 
         route.setSafetyScore(safetyScore);
 
         log.info(
-                "경로 안전도 분석 완료. safetyScore={}, cctvCount={}, storeCount={}, lightCount={}, publicSafetyFacilityCount={}",
+                "경로 안전도 분석 완료. safetyScore={}, cctvCount={}, storeCount={}, lightCount={}, policeFacilityCount={}",
                 route.getSafetyScore(),
                 cctvLocations.size(),
                 storeLocations.size(),
                 lightLocations.size(),
-                publicSafetyFacilityLocations.size()
+                policeFacilityLocations.size()
         );
     }
     private int calculateWeightedSafetyScore(
@@ -287,58 +283,266 @@ public class RouteService {
                 + safeSize(publicSafetyFacilityLocations) * PUBLIC_SAFETY_FACILITY_SCORE;
     }
 
-    private List<LocationDto> findNearbyCctvLocations(List<LocationDto> path) {
-        List<CctvDto> allCctvs = cctvService.getCctvData();
-        List<LocationDto> cctvLocations = new ArrayList<>();
-        if (allCctvs == null || allCctvs.isEmpty()) return cctvLocations;
+    private RouteBoundingBox createRouteBoundingBox(
+            List<LocationDto> path
+    ) {
+        double pad =
+                0.0006;
 
-        Set<Long> countedCctvIds = new HashSet<>();
-        for (LocationDto point : path) {
-            for (CctvDto cctv : allCctvs) {
-                double distance = getDistance(
-                        point.getLatitude(), point.getLongitude(),
-                        cctv.getLatitude(), cctv.getLongitude()
+        double minLat =
+                path.stream()
+                        .mapToDouble(LocationDto::getLatitude)
+                        .min()
+                        .orElseThrow()
+                        - pad;
+
+        double maxLat =
+                path.stream()
+                        .mapToDouble(LocationDto::getLatitude)
+                        .max()
+                        .orElseThrow()
+                        + pad;
+
+        double minLng =
+                path.stream()
+                        .mapToDouble(LocationDto::getLongitude)
+                        .min()
+                        .orElseThrow()
+                        - pad;
+
+        double maxLng =
+                path.stream()
+                        .mapToDouble(LocationDto::getLongitude)
+                        .max()
+                        .orElseThrow()
+                        + pad;
+
+        return new RouteBoundingBox(
+                minLat,
+                maxLat,
+                minLng,
+                maxLng
+        );
+    }
+
+    private record RouteBoundingBox(
+            double minLat,
+            double maxLat,
+            double minLng,
+            double maxLng
+    ) {
+    }
+
+    private List<LocationDto> findNearbyCctvLocations(
+            List<LocationDto> path
+    ) {
+        List<LocationDto> cctvLocations =
+                new ArrayList<>();
+
+        if (path == null || path.isEmpty()) {
+            return cctvLocations;
+        }
+
+        RouteBoundingBox boundingBox =
+                createRouteBoundingBox(path);
+
+        List<Cctv> candidates =
+                cctvService.findInBounds(
+                        boundingBox.minLat(),
+                        boundingBox.maxLat(),
+                        boundingBox.minLng(),
+                        boundingBox.maxLng()
                 );
-                if (distance <= SAFETY_SEARCH_RADIUS_METERS && countedCctvIds.add(cctv.getCctvId())) {
-                    cctvLocations.add(new LocationDto(cctv.getLatitude(), cctv.getLongitude()));
+
+        if (candidates == null || candidates.isEmpty()) {
+            return cctvLocations;
+        }
+
+        Set<String> countedCctvLocations =
+                new HashSet<>();
+
+        for (LocationDto point : path) {
+            for (Cctv cctv : candidates) {
+                if (cctv.getLatitude() == null
+                        || cctv.getLongitude() == null) {
+
+                    continue;
+                }
+
+                double latitude =
+                        cctv.getLatitude().doubleValue();
+
+                double longitude =
+                        cctv.getLongitude().doubleValue();
+
+                double distance =
+                        getDistance(
+                                point.getLatitude(),
+                                point.getLongitude(),
+                                latitude,
+                                longitude
+                        );
+
+                String cctvLocationKey =
+                        latitude + "_" + longitude;
+
+                if (distance <= SAFETY_SEARCH_RADIUS_METERS
+                        && countedCctvLocations.add(cctvLocationKey)) {
+
+                    cctvLocations.add(
+                            new LocationDto(
+                                    latitude,
+                                    longitude
+                            )
+                    );
                 }
             }
         }
+
         return cctvLocations;
     }
     private List<LocationDto> findNearbyPublicSafetyFacilities(
             List<LocationDto> path
     ) {
-        /*
-         * TODO:
-         * 치안시설 데이터가 연결되면 이 메서드에서
-         * 경로 주변 50m 이내 치안시설 좌표를 찾아 반환하도록 구현합니다.
-         *
-         * 현재는 미구현 상태이므로 빈 목록을 반환합니다.
-         */
-        return List.of();
-    }
+        List<LocationDto> policeFacilityLocations =
+                new ArrayList<>();
 
-    // 🔥 주변 보안등 탐색 로직
-    private List<LocationDto> findNearbySecurityLights(List<LocationDto> path) {
-        List<LocationDto> allLights = securityLightService.getSecurityLightData();
-        List<LocationDto> lightLocations = new ArrayList<>();
-        if (allLights == null || allLights.isEmpty()) return lightLocations;
+        if (path == null || path.isEmpty()) {
+            return policeFacilityLocations;
+        }
 
-        Set<String> countedLights = new HashSet<>();
-        for (LocationDto point : path) {
-            for (LocationDto light : allLights) {
-                double distance = getDistance(
-                        point.getLatitude(), point.getLongitude(),
-                        light.getLatitude(), light.getLongitude()
+        RouteBoundingBox boundingBox =
+                createRouteBoundingBox(path);
+
+        List<PoliceFacility> candidates =
+                policeFacilityService.findInBounds(
+                        boundingBox.minLat(),
+                        boundingBox.maxLat(),
+                        boundingBox.minLng(),
+                        boundingBox.maxLng()
                 );
 
-                String lightKey = light.getLatitude() + "_" + light.getLongitude();
-                if (distance <= SAFETY_SEARCH_RADIUS_METERS && countedLights.add(lightKey)) {
-                    lightLocations.add(new LocationDto(light.getLatitude(), light.getLongitude()));
+        if (candidates == null || candidates.isEmpty()) {
+            return policeFacilityLocations;
+        }
+
+        Set<Long> countedPoliceFacilityIds =
+                new HashSet<>();
+
+        for (LocationDto point : path) {
+            for (PoliceFacility facility : candidates) {
+                if (facility.getId() == null
+                        || facility.getLatitude() == null
+                        || facility.getLongitude() == null) {
+
+                    continue;
+                }
+
+                double latitude =
+                        facility.getLatitude().doubleValue();
+
+                double longitude =
+                        facility.getLongitude().doubleValue();
+
+                double distance =
+                        getDistance(
+                                point.getLatitude(),
+                                point.getLongitude(),
+                                latitude,
+                                longitude
+                        );
+
+                if (distance <= SAFETY_SEARCH_RADIUS_METERS
+                        && countedPoliceFacilityIds.add(facility.getId())) {
+
+                    policeFacilityLocations.add(
+                            new LocationDto(
+                                    latitude,
+                                    longitude
+                            )
+                    );
                 }
             }
         }
+
+        return policeFacilityLocations;
+    }
+    // 주변보안등
+    private List<LocationDto> findNearbySecurityLights(
+            List<LocationDto> path
+    ) {
+        List<LocationDto> lightLocations =
+                new ArrayList<>();
+
+        if (path == null || path.isEmpty()) {
+            return lightLocations;
+        }
+
+        RouteBoundingBox boundingBox =
+                createRouteBoundingBox(path);
+
+        /*
+         * 전국 136만 건을 전부 메모리에서 순회하지 않고,
+         * 현재 경로 주변 bbox에 존재하는 보안등만 DB에서 가져옵니다.
+         */
+        List<StreetLamp> candidates =
+                securityLightService.findInBounds(
+                        boundingBox.minLat(),
+                        boundingBox.maxLat(),
+                        boundingBox.minLng(),
+                        boundingBox.maxLng()
+                );
+
+        if (candidates == null || candidates.isEmpty()) {
+            return lightLocations;
+        }
+
+        /*
+         * 서로 다른 API 행이라도 같은 위치에 보안등이 여러 개 있을 수 있으므로
+         * 안전점수 계산에서는 동일 좌표를 한 번만 계산합니다.
+         */
+        Set<String> countedLightLocations =
+                new HashSet<>();
+
+        for (LocationDto point : path) {
+            for (StreetLamp lamp : candidates) {
+
+                if (lamp.getLatitude() == null
+                        || lamp.getLongitude() == null) {
+
+                    continue;
+                }
+
+                double latitude =
+                        lamp.getLatitude().doubleValue();
+
+                double longitude =
+                        lamp.getLongitude().doubleValue();
+
+                double distance =
+                        getDistance(
+                                point.getLatitude(),
+                                point.getLongitude(),
+                                latitude,
+                                longitude
+                        );
+
+                String lightLocationKey =
+                        latitude + "_" + longitude;
+
+                if (distance <= SAFETY_SEARCH_RADIUS_METERS
+                        && countedLightLocations.add(lightLocationKey)) {
+
+                    lightLocations.add(
+                            new LocationDto(
+                                    latitude,
+                                    longitude
+                            )
+                    );
+                }
+            }
+        }
+
         return lightLocations;
     }
 
