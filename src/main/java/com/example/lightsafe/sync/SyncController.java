@@ -13,6 +13,7 @@ public class SyncController {
 
     private final PoliceFacilitySyncService policeFacilitySyncService;
     private final CctvSyncService cctvSyncService;
+    private final SecurityLightSyncService securityLightSyncService;
 
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/police-facilities")
@@ -32,6 +33,16 @@ public class SyncController {
                 ApiResponse.ok(
                         cctvSyncService.syncCctvs(),
                         "CCTV 수집 완료"
+                )
+        );
+    }
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/security-lights")
+    public ResponseEntity<ApiResponse<SyncResultResponse>> syncSecurityLights() {
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        securityLightSyncService.syncSecurityLights(),
+                        "보안등 수집 완료"
                 )
         );
     }

@@ -467,27 +467,82 @@ public class RouteService {
 
         return policeFacilityLocations;
     }
+    // 주변보안등
+    private List<LocationDto> findNearbySecurityLights(
+            List<LocationDto> path
+    ) {
+        List<LocationDto> lightLocations =
+                new ArrayList<>();
 
-    // 🔥 주변 보안등 탐색 로직
-    private List<LocationDto> findNearbySecurityLights(List<LocationDto> path) {
-        List<LocationDto> allLights = securityLightService.getSecurityLightData();
-        List<LocationDto> lightLocations = new ArrayList<>();
-        if (allLights == null || allLights.isEmpty()) return lightLocations;
+        if (path == null || path.isEmpty()) {
+            return lightLocations;
+        }
 
-        Set<String> countedLights = new HashSet<>();
-        for (LocationDto point : path) {
-            for (LocationDto light : allLights) {
-                double distance = getDistance(
-                        point.getLatitude(), point.getLongitude(),
-                        light.getLatitude(), light.getLongitude()
+        RouteBoundingBox boundingBox =
+                createRouteBoundingBox(path);
+
+        /*
+         * 전국 136만 건을 전부 메모리에서 순회하지 않고,
+         * 현재 경로 주변 bbox에 존재하는 보안등만 DB에서 가져옵니다.
+         */
+        List<StreetLamp> candidates =
+                securityLightService.findInBounds(
+                        boundingBox.minLat(),
+                        boundingBox.maxLat(),
+                        boundingBox.minLng(),
+                        boundingBox.maxLng()
                 );
 
-                String lightKey = light.getLatitude() + "_" + light.getLongitude();
-                if (distance <= SAFETY_SEARCH_RADIUS_METERS && countedLights.add(lightKey)) {
-                    lightLocations.add(new LocationDto(light.getLatitude(), light.getLongitude()));
+        if (candidates == null || candidates.isEmpty()) {
+            return lightLocations;
+        }
+
+        /*
+         * 서로 다른 API 행이라도 같은 위치에 보안등이 여러 개 있을 수 있으므로
+         * 안전점수 계산에서는 동일 좌표를 한 번만 계산합니다.
+         */
+        Set<String> countedLightLocations =
+                new HashSet<>();
+
+        for (LocationDto point : path) {
+            for (StreetLamp lamp : candidates) {
+
+                if (lamp.getLatitude() == null
+                        || lamp.getLongitude() == null) {
+
+                    continue;
+                }
+
+                double latitude =
+                        lamp.getLatitude().doubleValue();
+
+                double longitude =
+                        lamp.getLongitude().doubleValue();
+
+                double distance =
+                        getDistance(
+                                point.getLatitude(),
+                                point.getLongitude(),
+                                latitude,
+                                longitude
+                        );
+
+                String lightLocationKey =
+                        latitude + "_" + longitude;
+
+                if (distance <= SAFETY_SEARCH_RADIUS_METERS
+                        && countedLightLocations.add(lightLocationKey)) {
+
+                    lightLocations.add(
+                            new LocationDto(
+                                    latitude,
+                                    longitude
+                            )
+                    );
                 }
             }
         }
+
         return lightLocations;
     }
 
