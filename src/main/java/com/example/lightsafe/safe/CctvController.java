@@ -1,5 +1,6 @@
 package com.example.lightsafe.safe;
 
+import com.example.lightsafe.common.exception.BadRequestException;
 import com.example.lightsafe.common.response.ApiResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -31,9 +32,8 @@ public class CctvController {
                 || minLng == null
                 || maxLng == null) {
 
-            return ApiResponse.ok(
-                    cctvService.getCctvData(),
-                    "CCTV 전체 조회 성공"
+            throw new BadRequestException(
+                    "minLat, maxLat, minLng, maxLng를 모두 입력해야 합니다."
             );
         }
 

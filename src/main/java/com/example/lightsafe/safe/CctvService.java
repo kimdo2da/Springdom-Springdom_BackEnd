@@ -18,13 +18,6 @@ public class CctvService {
 
     private final CctvRepository cctvRepository;
 
-    public List<CctvDto> getCctvData() {
-        return cctvRepository.findAll()
-                .stream()
-                .map(this::toDto)
-                .toList();
-    }
-
     public List<CctvDto> getCctvsInBounds(
             double minLat,
             double maxLat,
