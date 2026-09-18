@@ -64,7 +64,7 @@ public class CctvSyncService {
             int pageNo = 1;
             int totalCount = Integer.MAX_VALUE;
 
-            while ((pageNo - 1) * NUM_OF_ROWS < totalCount) {
+            while (fetchedCount < totalCount) {
                 String url =
                         PUBLIC_DATA_CCTV_URL
                                 + "?serviceKey=" + publicDataServiceKey
@@ -178,6 +178,10 @@ public class CctvSyncService {
                 );
 
                 if (items.isEmpty()) {
+                    break;
+                }
+
+                if (fetchedCount >= totalCount) {
                     break;
                 }
 
