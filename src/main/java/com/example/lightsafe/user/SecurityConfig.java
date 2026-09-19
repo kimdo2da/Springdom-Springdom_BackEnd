@@ -12,6 +12,11 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
 
 @Configuration
 @EnableMethodSecurity
@@ -32,6 +37,66 @@ public class SecurityConfig {
     }
 
     /**
+     * 프론트엔드에서 백엔드 API를 호출할 수 있도록
+     * CORS 허용 주소를 설정합니다.
+     *
+     * - localhost:5173
+     *   로컬 Vite 개발 환경
+     *
+     * - safelight-two.vercel.app
+     *   실제 Vercel 배포 환경
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+
+        CorsConfiguration configuration =
+                new CorsConfiguration();
+
+        configuration.setAllowedOrigins(
+                List.of(
+                        "http://localhost:5173",
+                        "https://safelight-two.vercel.app"
+                )
+        );
+
+        configuration.setAllowedMethods(
+                List.of(
+                        "GET",
+                        "POST",
+                        "PUT",
+                        "PATCH",
+                        "DELETE",
+                        "OPTIONS"
+                )
+        );
+
+        /*
+         * Authorization: Bearer ...
+         * Content-Type: application/json
+         * 등의 요청 헤더를 허용합니다.
+         */
+        configuration.setAllowedHeaders(
+                List.of("*")
+        );
+
+        /*
+         * 현재 JWT를 쿠키가 아니라
+         * Authorization 헤더로 사용하므로 false로 둡니다.
+         */
+        configuration.setAllowCredentials(false);
+
+        UrlBasedCorsConfigurationSource source =
+                new UrlBasedCorsConfigurationSource();
+
+        source.registerCorsConfiguration(
+                "/**",
+                configuration
+        );
+
+        return source;
+    }
+
+    /**
      * JwtFilter가 일반 서블릿 필터와
      * Spring Security 필터로 중복 등록되는 것을 방지합니다.
      */
@@ -40,6 +105,7 @@ public class SecurityConfig {
     jwtFilterRegistration(
             JwtFilter jwtFilter
     ) {
+
         FilterRegistrationBean<JwtFilter> registration =
                 new FilterRegistrationBean<>(jwtFilter);
 
@@ -50,10 +116,21 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(
-            HttpSecurity http
+            HttpSecurity http,
+            CorsConfigurationSource corsConfigurationSource
     ) throws Exception {
 
         http
+                /*
+                 * Vercel 프론트엔드와
+                 * localhost 프론트엔드의 요청을 허용합니다.
+                 */
+                .cors(cors ->
+                        cors.configurationSource(
+                                corsConfigurationSource
+                        )
+                )
+
                 // JWT 방식이므로 CSRF 비활성화
                 .csrf(csrf ->
                         csrf.disable()
@@ -89,6 +166,15 @@ public class SecurityConfig {
 
                 .authorizeHttpRequests(auth ->
                         auth
+                                /*
+                                 * CORS preflight 요청 허용
+                                 */
+                                .requestMatchers(
+                                        HttpMethod.OPTIONS,
+                                        "/**"
+                                )
+                                .permitAll()
+
                                 // 회원가입·로그인 공개
                                 .requestMatchers(
                                         "/users/register",
