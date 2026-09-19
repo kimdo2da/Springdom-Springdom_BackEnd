@@ -25,6 +25,9 @@ public class EmergencyReportService {
     private static final int DEFAULT_DANGER_RADIUS_METER = 300;
     private static final int DANGER_ZONE_ACTIVE_HOURS = 24;
 
+    private static final double CCTV_SEARCH_BBOX_DELTA = 0.01;
+    private static final double MAX_NEAREST_CCTV_DISTANCE_METER = 500.0;
+
     private final EmergencyReportRepository emergencyReportRepository;
     private final DangerZoneRepository dangerZoneRepository;
     private final CctvRepository cctvRepository;
@@ -455,19 +458,65 @@ public class EmergencyReportService {
             double latitude,
             double longitude
     ) {
-        return cctvRepository.findAll()
-                .stream()
-                .min(
-                        Comparator.comparingDouble(
-                                cctv -> calculateDistanceMeter(
-                                        latitude,
-                                        longitude,
-                                        cctv.getLatitude().doubleValue(),
-                                        cctv.getLongitude().doubleValue()
+        BigDecimal minLat =
+                BigDecimal.valueOf(
+                        latitude - CCTV_SEARCH_BBOX_DELTA
+                );
+
+        BigDecimal maxLat =
+                BigDecimal.valueOf(
+                        latitude + CCTV_SEARCH_BBOX_DELTA
+                );
+
+        BigDecimal minLng =
+                BigDecimal.valueOf(
+                        longitude - CCTV_SEARCH_BBOX_DELTA
+                );
+
+        BigDecimal maxLng =
+                BigDecimal.valueOf(
+                        longitude + CCTV_SEARCH_BBOX_DELTA
+                );
+
+        List<Cctv> candidates =
+                cctvRepository.findInBounds(
+                        minLat,
+                        maxLat,
+                        minLng,
+                        maxLng
+                );
+
+        Cctv nearestCctv =
+                candidates.stream()
+                        .min(
+                                Comparator.comparingDouble(
+                                        cctv -> calculateDistanceMeter(
+                                                latitude,
+                                                longitude,
+                                                cctv.getLatitude().doubleValue(),
+                                                cctv.getLongitude().doubleValue()
+                                        )
                                 )
                         )
-                )
-                .orElse(null);
+                        .orElse(null);
+
+        if (nearestCctv == null) {
+            return null;
+        }
+
+        double distance =
+                calculateDistanceMeter(
+                        latitude,
+                        longitude,
+                        nearestCctv.getLatitude().doubleValue(),
+                        nearestCctv.getLongitude().doubleValue()
+                );
+
+        if (distance > MAX_NEAREST_CCTV_DISTANCE_METER) {
+            return null;
+        }
+
+        return nearestCctv;
     }
 
     private void updateDangerZoneLevelAndCount(
