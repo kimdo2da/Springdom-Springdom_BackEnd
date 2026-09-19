@@ -1,4 +1,4 @@
-package com.example.lightsafe.emergency;
+package com.example.lightsafe.safe;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -6,22 +6,17 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Optional;
 
-public interface CctvRepository
-        extends JpaRepository<Cctv, Long> {
-
-    Optional<Cctv> findByMngNo(
-            String mngNo
-    );
+public interface StreetLampRepository
+        extends JpaRepository<StreetLamp, Long> {
 
     @Query("""
-            SELECT c
-            FROM Cctv c
-            WHERE c.latitude BETWEEN :minLat AND :maxLat
-              AND c.longitude BETWEEN :minLng AND :maxLng
+            SELECT s
+            FROM StreetLamp s
+            WHERE s.latitude BETWEEN :minLat AND :maxLat
+              AND s.longitude BETWEEN :minLng AND :maxLng
             """)
-    List<Cctv> findInBounds(
+    List<StreetLamp> findInBounds(
             @Param("minLat") BigDecimal minLat,
             @Param("maxLat") BigDecimal maxLat,
             @Param("minLng") BigDecimal minLng,
