@@ -5,6 +5,7 @@ import com.example.lightsafe.safe.PoliceFacility;
 import com.example.lightsafe.safe.PoliceFacilityRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.lightsafe.geocoding.VWorldGeocodingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,6 +36,7 @@ public class PoliceFacilitySyncService {
 
     private final PoliceFacilityRepository policeFacilityRepository;
     private final DataSyncLogRepository dataSyncLogRepository;
+    private final VWorldGeocodingService vWorldGeocodingService;
 
     @Value("${safemap.service-key:}")
     private String safemapServiceKey;
@@ -51,6 +53,10 @@ public class PoliceFacilitySyncService {
 
         int fetchedCount = 0;
         int savedCount = 0;
+        VWorldGeocodingService.GeocodingSession geocodingSession =
+                vWorldGeocodingService.newSession(
+                        DATASET
+                );
 
         try {
             RestTemplate restTemplate =
@@ -121,8 +127,10 @@ public class PoliceFacilitySyncService {
 
                 for (JsonNode item : items) {
                     PoliceFacility facility =
-                            convertToPoliceFacility(item);
-
+                            convertToPoliceFacility(
+                                    item,
+                                    geocodingSession
+                            );
                     if (facility == null) {
                         continue;
                     }
@@ -148,12 +156,26 @@ public class PoliceFacilitySyncService {
                 pageNo++;
             }
 
+            String message =
+                    "치안시설 수집 완료"
+                            + " (지오코딩 적용="
+                            + geocodingSession.resolvedCount()
+                            + ", VWorld API 호출="
+                            + geocodingSession.apiCalls()
+                            + ", 캐시 사용="
+                            + geocodingSession.cacheHits()
+                            + ", 지오코딩 실패 시도="
+                            + geocodingSession.failureCount()
+                            + ", 호출 제한 스킵="
+                            + geocodingSession.limitSkippedCount()
+                            + ")";
+
             finishLog(
                     syncLog,
                     "SUCCESS",
                     fetchedCount,
                     savedCount,
-                    "치안시설 수집 완료"
+                    message
             );
 
             return new SyncResultResponse(
@@ -161,7 +183,7 @@ public class PoliceFacilitySyncService {
                     "SUCCESS",
                     fetchedCount,
                     savedCount,
-                    "치안시설 수집 완료"
+                    message
             );
 
         } catch (Exception e) {
@@ -185,8 +207,10 @@ public class PoliceFacilitySyncService {
     }
 
     private PoliceFacility convertToPoliceFacility(
-            JsonNode item
+            JsonNode item,
+            VWorldGeocodingService.GeocodingSession geocodingSession
     ) {
+
         String objectId =
                 asText(
                         item,
@@ -196,6 +220,18 @@ public class PoliceFacilitySyncService {
         if (objectId.isBlank()) {
             return null;
         }
+
+        String roadAddress =
+                asText(
+                        item,
+                        "rn_adres"
+                );
+
+        String lotAddress =
+                asText(
+                        item,
+                        "adres"
+                );
 
         double x =
                 parseDouble(
@@ -213,39 +249,97 @@ public class PoliceFacilitySyncService {
                         )
                 );
 
-        if (x == 0.0 || y == 0.0) {
-            return null;
+        LocationPoint locationPoint =
+                null;
+
+        /*
+         * 기존 Safemap 좌표가 있으면
+         * 기존 방식 그대로 WebMercator → WGS84 변환
+         */
+        if (x != 0.0
+                && y != 0.0) {
+
+            LocationPoint converted =
+                    convertWebMercatorToWgs84(
+                            x,
+                            y
+                    );
+
+            if (isValidKoreaCoordinate(
+                    converted.latitude(),
+                    converted.longitude()
+            )) {
+
+                locationPoint =
+                        converted;
+            }
         }
 
-        LocationPoint locationPoint =
-                convertWebMercatorToWgs84(
-                        x,
-                        y
-                );
+        /*
+         * 원본 좌표가 없거나
+         * 변환 결과가 정상적인 국내 좌표가 아니면
+         * 주소를 이용해 VWorld fallback
+         */
+        if (locationPoint == null) {
 
-        if (!isValidKoreaCoordinate(
-                locationPoint.latitude(),
-                locationPoint.longitude()
-        )) {
-            return null;
+            VWorldGeocodingService.GeocodingResult geocodingResult =
+                    vWorldGeocodingService.geocode(
+                            roadAddress,
+                            lotAddress,
+                            geocodingSession
+                    );
+
+            if (geocodingResult == null) {
+                return null;
+            }
+
+            locationPoint =
+                    new LocationPoint(
+                            geocodingResult.latitude(),
+                            geocodingResult.longitude()
+                    );
         }
 
         PoliceFacility facility =
                 policeFacilityRepository
-                        .findByObjectId(objectId)
-                        .orElseGet(PoliceFacility::new);
+                        .findByObjectId(
+                                objectId
+                        )
+                        .orElseGet(
+                                PoliceFacility::new
+                        );
 
-        facility.setObjectId(objectId);
-        facility.setName(asText(item, "fclty_nm"));
-        facility.setKind(asText(item, "fclty_ty"));
-        facility.setAgency(asText(item, "police"));
-        facility.setStation(asText(item, "polcsttn"));
+        facility.setObjectId(
+                objectId
+        );
 
-        String roadAddress =
-                asText(item, "rn_adres");
+        facility.setName(
+                asText(
+                        item,
+                        "fclty_nm"
+                )
+        );
 
-        String lotAddress =
-                asText(item, "adres");
+        facility.setKind(
+                asText(
+                        item,
+                        "fclty_ty"
+                )
+        );
+
+        facility.setAgency(
+                asText(
+                        item,
+                        "police"
+                )
+        );
+
+        facility.setStation(
+                asText(
+                        item,
+                        "polcsttn"
+                )
+        );
 
         facility.setAddress(
                 roadAddress.isBlank()
@@ -253,9 +347,24 @@ public class PoliceFacilitySyncService {
                         : roadAddress
         );
 
-        facility.setTel(asText(item, "telno"));
-        facility.setLatitude(toDecimal(locationPoint.latitude()));
-        facility.setLongitude(toDecimal(locationPoint.longitude()));
+        facility.setTel(
+                asText(
+                        item,
+                        "telno"
+                )
+        );
+
+        facility.setLatitude(
+                toDecimal(
+                        locationPoint.latitude()
+                )
+        );
+
+        facility.setLongitude(
+                toDecimal(
+                        locationPoint.longitude()
+                )
+        );
 
         return facility;
     }
