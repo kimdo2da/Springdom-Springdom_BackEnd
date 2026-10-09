@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @Getter
 @Setter
@@ -33,6 +34,16 @@ public class Cctv {
 
     @Column(name = "purpose", length = 50)
     private String purpose;
+
+    @Column(name = "mng_no", length = 40)
+    private String mngNo;
+
+    @Column(name = "camera_count", nullable = false)
+    private Integer cameraCount = 1;
+
+    @Column(name = "institution", length = 120)
+    private String institution;
+
+    @Column(name = "reference_date")
+    private LocalDate referenceDate;
 }
-//이 기능은 cctv 기능이 아닌 근처의 cctv에서 사용자 위급신고시
-//위치 가늠화 및 연동을 위한것.
