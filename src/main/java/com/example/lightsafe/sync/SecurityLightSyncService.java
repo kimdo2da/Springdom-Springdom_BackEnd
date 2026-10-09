@@ -3,6 +3,7 @@ package com.example.lightsafe.sync;
 import com.example.lightsafe.common.exception.BadRequestException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.lightsafe.geocoding.VWorldGeocodingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,6 +39,7 @@ public class SecurityLightSyncService {
 
     private final JdbcTemplate jdbcTemplate;
     private final DataSyncLogRepository dataSyncLogRepository;
+    private final VWorldGeocodingService vWorldGeocodingService;
 
     @Value("${public-data.service-key:}")
     private String publicDataServiceKey;
@@ -58,6 +60,12 @@ public class SecurityLightSyncService {
         int fetchedCount = 0;
         int savedCount = 0;
         int skippedCount = 0;
+
+        VWorldGeocodingService.GeocodingSession geocodingSession =
+                vWorldGeocodingService.newSession(
+                        DATASET
+                );
+
 
         try {
             RestTemplate restTemplate =
@@ -158,7 +166,10 @@ public class SecurityLightSyncService {
                     fetchedCount++;
 
                     StreetLampSyncRow row =
-                            convert(item);
+                            convert(
+                                    item,
+                                    geocodingSession
+                            );
 
                     if (row == null) {
                         skippedCount++;
@@ -195,9 +206,19 @@ public class SecurityLightSyncService {
 
             String message =
                     "보안등 수집 완료"
-                            + " (좌표 없는 데이터 "
+                            + " (최종 제외="
                             + skippedCount
-                            + "건 제외)";
+                            + ", 지오코딩 적용="
+                            + geocodingSession.resolvedCount()
+                            + ", VWorld API 호출="
+                            + geocodingSession.apiCalls()
+                            + ", 캐시 사용="
+                            + geocodingSession.cacheHits()
+                            + ", 지오코딩 실패 시도="
+                            + geocodingSession.failureCount()
+                            + ", 호출 제한 스킵="
+                            + geocodingSession.limitSkippedCount()
+                            + ")";
 
             finishLog(
                     syncLog,
@@ -238,50 +259,91 @@ public class SecurityLightSyncService {
     }
 
     private StreetLampSyncRow convert(
-            JsonNode item
+            JsonNode item,
+            VWorldGeocodingService.GeocodingSession geocodingSession
     ) {
+
         String latitudeText =
-                text(item, "latitude");
+                text(
+                        item,
+                        "latitude"
+                );
 
         String longitudeText =
-                text(item, "longitude");
+                text(
+                        item,
+                        "longitude"
+                );
 
         double latitude =
-                parseDouble(latitudeText);
+                parseDouble(
+                        latitudeText
+                );
 
         double longitude =
-                parseDouble(longitudeText);
-
-        /*
-         * 현재 단계에서는 API 자체에 정상 위경도가 있는
-         * 보안등만 DB에 저장합니다.
-         *
-         * 좌표 없는 행은 이후 VWorld 지오코딩 단계에서 처리합니다.
-         */
-        if (!isValidKoreaCoordinate(
-                latitude,
-                longitude
-        )) {
-            return null;
-        }
+                parseDouble(
+                        longitudeText
+                );
 
         String locationName =
                 limit(
-                        text(item, "lmpLcNm"),
+                        text(
+                                item,
+                                "lmpLcNm"
+                        ),
                         255
                 );
 
         String roadAddress =
                 limit(
-                        text(item, "rdnmadr"),
+                        text(
+                                item,
+                                "rdnmadr"
+                        ),
                         255
                 );
 
         String lotAddress =
                 limit(
-                        text(item, "lnmadr"),
+                        text(
+                                item,
+                                "lnmadr"
+                        ),
                         255
                 );
+
+        String coordSource =
+                "API";
+
+        /*
+         * 원본 API 좌표가 없는 경우에만
+         * VWorld 주소 지오코딩을 사용합니다.
+         */
+        if (!isValidKoreaCoordinate(
+                latitude,
+                longitude
+        )) {
+
+            VWorldGeocodingService.GeocodingResult geocodingResult =
+                    vWorldGeocodingService.geocode(
+                            roadAddress,
+                            lotAddress,
+                            geocodingSession
+                    );
+
+            if (geocodingResult == null) {
+                return null;
+            }
+
+            latitude =
+                    geocodingResult.latitude();
+
+            longitude =
+                    geocodingResult.longitude();
+
+            coordSource =
+                    geocodingResult.source();
+        }
 
         String address =
                 !roadAddress.isBlank()
@@ -290,18 +352,27 @@ public class SecurityLightSyncService {
 
         String installType =
                 limit(
-                        text(item, "installationType"),
+                        text(
+                                item,
+                                "installationType"
+                        ),
                         30
                 );
 
         String insttName =
                 limit(
-                        text(item, "insttNm"),
+                        text(
+                                item,
+                                "insttNm"
+                        ),
                         100
                 );
 
         String insttCode =
-                text(item, "insttCode");
+                text(
+                        item,
+                        "insttCode"
+                );
 
         int lampCount =
                 parsePositiveInt(
@@ -319,6 +390,11 @@ public class SecurityLightSyncService {
                         )
                 );
 
+        /*
+         * 중요:
+         * VWorld로 좌표를 보정했다면
+         * 보정이 끝난 좌표로 source_hash를 만듭니다.
+         */
         byte[] sourceHash =
                 createSourceHash(
                         insttCode,
@@ -328,9 +404,16 @@ public class SecurityLightSyncService {
                 );
 
         return new StreetLampSyncRow(
-                toDecimal(latitude),
-                toDecimal(longitude),
-                limit(address, 255),
+                toDecimal(
+                        latitude
+                ),
+                toDecimal(
+                        longitude
+                ),
+                limit(
+                        address,
+                        255
+                ),
                 lampCount,
                 sourceHash,
                 roadAddress,
@@ -338,7 +421,7 @@ public class SecurityLightSyncService {
                 locationName,
                 insttName,
                 installType,
-                "API",
+                coordSource,
                 referenceDate
         );
     }

@@ -2,6 +2,7 @@ package com.example.lightsafe.sync;
 
 import com.example.lightsafe.common.exception.BadRequestException;
 import com.example.lightsafe.emergency.Cctv;
+import com.example.lightsafe.geocoding.VWorldGeocodingService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -35,18 +36,17 @@ public class CctvSyncService {
 
     /*
      * 요청값은 1000으로 보내지만
-     * 실제 CCTV API는 현재 약 100건씩 반환하고 있습니다.
+     * 실제 CCTV API는 약 100건씩 반환할 수 있습니다.
      *
-     * 따라서 종료 여부는 numOfRows가 아니라
+     * 따라서 종료 여부는 pageNo * numOfRows가 아니라
      * 실제 fetchedCount와 totalCount를 기준으로 판단합니다.
      */
     private static final int NUM_OF_ROWS =
             1000;
 
     /*
-     * 공공데이터 API가 일시적으로
-     * body가 없는 응답 등을 반환하는 경우
-     * 같은 페이지를 최대 3회까지 다시 요청합니다.
+     * CCTV API가 일시적으로 비정상 응답을 반환하면
+     * 동일 페이지를 최대 3회까지 재시도합니다.
      */
     private static final int API_RETRY_COUNT =
             3;
@@ -54,23 +54,16 @@ public class CctvSyncService {
     private static final long API_RETRY_DELAY_MS =
             1500L;
 
-    /*
-     * JdbcTemplate batchUpdate에서 사용하는
-     * 최대 배치 크기입니다.
-     *
-     * 현재 CCTV API가 한 페이지당 약 100건을 반환하므로
-     * 실질적으로는 페이지 단위로 한 번씩 처리됩니다.
-     */
     private static final int DB_BATCH_SIZE =
             1000;
 
     /*
-     * mng_no가 이미 존재하면 UPDATE,
-     * 존재하지 않으면 INSERT 합니다.
+     * mng_no 기준 UPSERT
      *
-     * 기존 cctv_id는 유지되므로
-     * emergency_reports.nearest_cctv_id 같은
-     * 기존 FK 관계도 유지됩니다.
+     * 기존 데이터 → UPDATE
+     * 신규 데이터 → INSERT
+     *
+     * 기존 cctv_id는 유지됩니다.
      */
     private static final String UPSERT_SQL = """
             INSERT INTO cctvs (
@@ -98,9 +91,11 @@ public class CctvSyncService {
 
     private final JdbcTemplate jdbcTemplate;
     private final DataSyncLogRepository dataSyncLogRepository;
+    private final VWorldGeocodingService vWorldGeocodingService;
 
     @Value("${public-data.service-key:}")
     private String publicDataServiceKey;
+
 
     public SyncResultResponse syncCctvs() {
 
@@ -118,6 +113,11 @@ public class CctvSyncService {
         int fetchedCount = 0;
         int savedCount = 0;
 
+        VWorldGeocodingService.GeocodingSession geocodingSession =
+                vWorldGeocodingService.newSession(
+                        DATASET
+                );
+
         try {
 
             RestTemplate restTemplate =
@@ -128,21 +128,11 @@ public class CctvSyncService {
 
             int pageNo = 1;
 
-            /*
-             * 첫 페이지를 받아오기 전에는
-             * 전체 건수를 모르므로 MAX_VALUE로 시작합니다.
-             */
             int totalCount =
                     Integer.MAX_VALUE;
 
             while (fetchedCount < totalCount) {
 
-                /*
-                 * 한 페이지를 가져옵니다.
-                 *
-                 * API에서 일시적으로 이상 응답이 오면
-                 * fetchPageWithRetry() 내부에서 최대 3회 재시도합니다.
-                 */
                 CctvPage page =
                         fetchPageWithRetry(
                                 pageNo,
@@ -157,10 +147,6 @@ public class CctvSyncService {
                 List<JsonNode> items =
                         page.items();
 
-                /*
-                 * fetchedCount는
-                 * API에서 실제로 전달받은 원본 데이터 개수입니다.
-                 */
                 fetchedCount +=
                         items.size();
 
@@ -169,36 +155,23 @@ public class CctvSyncService {
                                 items.size()
                         );
 
-                /*
-                 * API 데이터 파싱 및 검증
-                 *
-                 * 기존에 사용하던 필터링 규칙은 그대로 유지합니다.
-                 */
                 for (JsonNode item : items) {
 
                     Cctv cctv =
-                            convertToCctv(item);
+                            convertToCctv(
+                                    item,
+                                    geocodingSession
+                            );
 
                     if (cctv == null) {
                         continue;
                     }
 
-                    cctvs.add(cctv);
+                    cctvs.add(
+                            cctv
+                    );
                 }
 
-                /*
-                 * 기존:
-                 *
-                 * 각 CCTV마다
-                 * findByMngNo() SELECT
-                 * +
-                 * JPA INSERT/UPDATE
-                 *
-                 * 수정:
-                 *
-                 * 한 페이지의 CCTV를
-                 * JdbcTemplate batch UPSERT로 처리
-                 */
                 if (!cctvs.isEmpty()) {
 
                     batchUpsertCctvs(
@@ -206,12 +179,6 @@ public class CctvSyncService {
                     );
                 }
 
-                /*
-                 * savedCount는
-                 * 신규 INSERT 건수만 의미하는 것이 아니라
-                 * 유효한 데이터로 판단되어
-                 * UPSERT 처리된 건수를 의미합니다.
-                 */
                 savedCount +=
                         cctvs.size();
 
@@ -223,22 +190,10 @@ public class CctvSyncService {
                         totalCount
                 );
 
-                /*
-                 * API가 빈 페이지를 반환하면
-                 * 더 이상 진행하지 않습니다.
-                 */
                 if (items.isEmpty()) {
                     break;
                 }
 
-                /*
-                 * 실제 받은 데이터 수가
-                 * 전체 건수에 도달하면 종료합니다.
-                 *
-                 * API가 요청한 numOfRows=1000과 달리
-                 * 실제로는 약 100건만 반환하기 때문에
-                 * pageNo * NUM_OF_ROWS 방식으로 계산하면 안 됩니다.
-                 */
                 if (fetchedCount >= totalCount) {
                     break;
                 }
@@ -246,12 +201,26 @@ public class CctvSyncService {
                 pageNo++;
             }
 
+            String message =
+                    "CCTV 수집 완료"
+                            + " (지오코딩 적용="
+                            + geocodingSession.resolvedCount()
+                            + ", VWorld API 호출="
+                            + geocodingSession.apiCalls()
+                            + ", 캐시 사용="
+                            + geocodingSession.cacheHits()
+                            + ", 지오코딩 실패 시도="
+                            + geocodingSession.failureCount()
+                            + ", 호출 제한 스킵="
+                            + geocodingSession.limitSkippedCount()
+                            + ")";
+
             finishLog(
                     syncLog,
                     "SUCCESS",
                     fetchedCount,
                     savedCount,
-                    "CCTV 수집 완료"
+                    message
             );
 
             return new SyncResultResponse(
@@ -259,7 +228,7 @@ public class CctvSyncService {
                     "SUCCESS",
                     fetchedCount,
                     savedCount,
-                    "CCTV 수집 완료"
+                    message
             );
 
         } catch (Exception e) {
@@ -284,20 +253,7 @@ public class CctvSyncService {
         }
     }
 
-    /*
-     * 같은 API 페이지를 최대 3회까지 재시도합니다.
-     *
-     * 예:
-     *
-     * pageNo=3065 1차 실패
-     * → 1.5초 대기
-     *
-     * pageNo=3065 2차 실패
-     * → 3초 대기
-     *
-     * pageNo=3065 3차 실패
-     * → 전체 수집 실패 처리
-     */
+
     private CctvPage fetchPageWithRetry(
             int pageNo,
             int currentTotalCount,
@@ -308,9 +264,11 @@ public class CctvSyncService {
         Exception lastException =
                 null;
 
-        for (int attempt = 1;
-             attempt <= API_RETRY_COUNT;
-             attempt++) {
+        for (
+                int attempt = 1;
+                attempt <= API_RETRY_COUNT;
+                attempt++
+        ) {
 
             try {
 
@@ -341,7 +299,8 @@ public class CctvSyncService {
                 try {
 
                     Thread.sleep(
-                            API_RETRY_DELAY_MS * attempt
+                            API_RETRY_DELAY_MS
+                                    * attempt
                     );
 
                 } catch (InterruptedException interruptedException) {
@@ -371,9 +330,7 @@ public class CctvSyncService {
         );
     }
 
-    /*
-     * 실제 CCTV 공공데이터 API 한 페이지 요청
-     */
+
     private CctvPage fetchPage(
             int pageNo,
             int currentTotalCount,
@@ -391,14 +348,11 @@ public class CctvSyncService {
                         + NUM_OF_ROWS
                         + "&type=json";
 
-        /*
-         * 인코딩된 serviceKey가
-         * RestTemplate에서 다시 인코딩되는 문제를 막기 위해
-         * URI.create()를 사용합니다.
-         */
         ResponseEntity<String> response =
                 restTemplate.getForEntity(
-                        URI.create(url),
+                        URI.create(
+                                url
+                        ),
                         String.class
                 );
 
@@ -413,10 +367,6 @@ public class CctvSyncService {
             );
         }
 
-        /*
-         * JSON이 아닌 HTML/XML 오류 페이지 등이
-         * 반환되는 경우를 차단합니다.
-         */
         if (!responseBody
                 .trim()
                 .startsWith("{")) {
@@ -443,20 +393,25 @@ public class CctvSyncService {
 
         String resultCode =
                 headerNode
-                        .path("resultCode")
+                        .path(
+                                "resultCode"
+                        )
                         .asText("");
 
         String resultMessage =
                 headerNode
-                        .path("resultMsg")
+                        .path(
+                                "resultMsg"
+                        )
                         .asText("");
 
-        /*
-         * 정상 코드가 아닐 경우 실패 처리
-         */
         if (!resultCode.isBlank()
-                && !"0".equals(resultCode)
-                && !"00".equals(resultCode)) {
+                && !"0".equals(
+                resultCode
+        )
+                && !"00".equals(
+                resultCode
+        )) {
 
             throw new BadRequestException(
                     "CCTV API 오류: "
@@ -471,17 +426,6 @@ public class CctvSyncService {
                         "body"
                 );
 
-        /*
-         * API 응답 형태가
-         *
-         * response.body
-         *
-         * 또는
-         *
-         * body
-         *
-         * 형태일 가능성을 모두 처리합니다.
-         */
         if (bodyNode.isMissingNode()
                 || bodyNode.isNull()) {
 
@@ -491,13 +435,6 @@ public class CctvSyncService {
                     );
         }
 
-        /*
-         * 지난 수집에서 pageNo=3065 근처에서
-         * body 없는 응답이 한 번 발생했습니다.
-         *
-         * 여기서 예외가 발생하면
-         * fetchPageWithRetry()가 같은 페이지를 다시 요청합니다.
-         */
         if (bodyNode.isMissingNode()
                 || bodyNode.isNull()
                 || !bodyNode.isObject()) {
@@ -517,8 +454,12 @@ public class CctvSyncService {
 
         JsonNode itemNode =
                 bodyNode
-                        .path("items")
-                        .path("item");
+                        .path(
+                                "items"
+                        )
+                        .path(
+                                "item"
+                        );
 
         if (itemNode.isMissingNode()) {
 
@@ -539,24 +480,14 @@ public class CctvSyncService {
         );
     }
 
-    /*
-     * CCTV API 한 페이지 결과
-     */
+
     private record CctvPage(
             int totalCount,
             List<JsonNode> items
     ) {
     }
 
-    /*
-     * 한 페이지의 유효 CCTV 데이터를
-     * 한 번의 batch 작업으로 UPSERT 합니다.
-     *
-     * mng_no UNIQUE KEY 기준:
-     *
-     * 존재함 → UPDATE
-     * 존재하지 않음 → INSERT
-     */
+
     private void batchUpsertCctvs(
             List<Cctv> cctvs
     ) {
@@ -632,22 +563,10 @@ public class CctvSyncService {
         );
     }
 
-    /*
-     * API JSON 한 건을 Cctv 객체로 변환합니다.
-     *
-     * 여기서는 DB 조회를 하지 않습니다.
-     *
-     * 기존에는:
-     *
-     * cctvRepository.findByMngNo(...)
-     *
-     * 를 CCTV마다 실행했기 때문에 매우 느렸습니다.
-     *
-     * 이제는 새 객체를 만든 뒤
-     * 마지막에 batch UPSERT합니다.
-     */
+
     private Cctv convertToCctv(
-            JsonNode item
+            JsonNode item,
+            VWorldGeocodingService.GeocodingSession geocodingSession
     ) {
 
         String mngNo =
@@ -664,8 +583,8 @@ public class CctvSyncService {
                 );
 
         /*
-         * 관리번호가 없으면
-         * UPSERT 기준을 만들 수 없으므로 제외합니다.
+         * mng_no가 없으면
+         * UPSERT 기준이 없으므로 제외합니다.
          */
         if (mngNo == null
                 || mngNo.isBlank()) {
@@ -701,26 +620,11 @@ public class CctvSyncService {
                 );
 
         /*
-         * 한국 범위를 크게 벗어난 좌표나
-         * 파싱에 실패해 0이 된 데이터는 제외합니다.
-         */
-        if (!isValidKoreaCoordinate(
-                latitude,
-                longitude
-        )) {
-
-            return null;
-        }
-
-        /*
-         * DB SELECT 제거.
+         * 좌표 확인보다 주소를 먼저 확보합니다.
          *
-         * 존재 여부는 나중에 MySQL
-         * ON DUPLICATE KEY UPDATE가 판단합니다.
+         * 원본 좌표가 잘못된 경우
+         * 이 주소들을 이용해 VWorld fallback을 수행합니다.
          */
-        Cctv cctv =
-                new Cctv();
-
         String roadAddress =
                 asTextAny(
                         item,
@@ -738,6 +642,38 @@ public class CctvSyncService {
                         "lotAddress",
                         "lnmadr"
                 );
+
+        /*
+         * 정상 좌표면 그대로 사용.
+         *
+         * 좌표가 없거나 한국 범위를 벗어나면
+         * VWorld 주소 지오코딩으로 보정합니다.
+         */
+        if (!isValidKoreaCoordinate(
+                latitude,
+                longitude
+        )) {
+
+            VWorldGeocodingService.GeocodingResult geocodingResult =
+                    vWorldGeocodingService.geocode(
+                            roadAddress,
+                            lotAddress,
+                            geocodingSession
+                    );
+
+            if (geocodingResult == null) {
+                return null;
+            }
+
+            latitude =
+                    geocodingResult.latitude();
+
+            longitude =
+                    geocodingResult.longitude();
+        }
+
+        Cctv cctv =
+                new Cctv();
 
         String address =
                 roadAddress.isBlank()
@@ -846,6 +782,7 @@ public class CctvSyncService {
         return cctv;
     }
 
+
     private String makeCctvName(
             String institution,
             String purpose,
@@ -872,6 +809,7 @@ public class CctvSyncService {
         return "CCTV-"
                 + mngNo;
     }
+
 
     private List<JsonNode> toItemList(
             JsonNode itemNode
@@ -905,6 +843,7 @@ public class CctvSyncService {
 
         return items;
     }
+
 
     private String asTextAny(
             JsonNode node,
@@ -940,6 +879,7 @@ public class CctvSyncService {
 
         return "";
     }
+
 
     private int getIntAny(
             JsonNode node,
@@ -982,6 +922,7 @@ public class CctvSyncService {
         return defaultValue;
     }
 
+
     private double parseDouble(
             String value
     ) {
@@ -1003,6 +944,7 @@ public class CctvSyncService {
             return 0.0;
         }
     }
+
 
     private int parsePositiveInt(
             String value
@@ -1031,6 +973,7 @@ public class CctvSyncService {
         }
     }
 
+
     private LocalDate parseDate(
             String value
     ) {
@@ -1044,8 +987,14 @@ public class CctvSyncService {
         String text =
                 value
                         .trim()
-                        .replace(".", "-")
-                        .replace("/", "-");
+                        .replace(
+                                ".",
+                                "-"
+                        )
+                        .replace(
+                                "/",
+                                "-"
+                        );
 
         try {
 
@@ -1069,6 +1018,7 @@ public class CctvSyncService {
         return null;
     }
 
+
     private boolean isValidKoreaCoordinate(
             double latitude,
             double longitude
@@ -1079,6 +1029,7 @@ public class CctvSyncService {
                 && longitude >= 124.0
                 && longitude <= 132.0;
     }
+
 
     private BigDecimal toDecimal(
             double value
@@ -1093,6 +1044,7 @@ public class CctvSyncService {
                         RoundingMode.HALF_UP
                 );
     }
+
 
     private String limit(
             String value,
@@ -1116,6 +1068,7 @@ public class CctvSyncService {
         );
     }
 
+
     private DataSyncLog startLog() {
 
         DataSyncLog syncLog =
@@ -1137,6 +1090,7 @@ public class CctvSyncService {
                 syncLog
         );
     }
+
 
     private void finishLog(
             DataSyncLog syncLog,
