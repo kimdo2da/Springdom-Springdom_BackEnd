@@ -46,7 +46,7 @@ public class VWorldGeocodingService {
      * 캐시 조회는 이 숫자에 포함되지 않습니다.
      *
      */
-    @Value("${vworld.geocoding.max-api-calls-per-sync:500}")
+    @Value("${vworld.geocoding.max-api-calls-per-sync:10000}")
     private int maxApiCallsPerSync;
 
     /*
