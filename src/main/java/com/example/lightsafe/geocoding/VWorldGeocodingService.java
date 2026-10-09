@@ -1,13 +1,16 @@
 package com.example.lightsafe.geocoding;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -41,8 +44,9 @@ public class VWorldGeocodingService {
      * 실제 VWorld HTTP 호출을 최대 몇 번까지 허용할지 설정합니다.
      *
      * 캐시 조회는 이 숫자에 포함되지 않습니다.
+     *
      */
-    @Value("${vworld.geocoding.max-api-calls-per-sync:500}")
+    @Value("${vworld.geocoding.max-api-calls-per-sync:10000}")
     private int maxApiCallsPerSync;
 
     /*
@@ -52,15 +56,49 @@ public class VWorldGeocodingService {
     @Value("${vworld.geocoding.failure-retry-days:30}")
     private long failureRetryDays;
 
+    /*
+     * VWorld 서버와 TCP 연결을 맺을 때
+     * 최대 대기 시간입니다.
+     *
+     * 기본값: 5초
+     */
+    @Value("${vworld.geocoding.connect-timeout-ms:5000}")
+    private int connectTimeoutMs;
+
+    /*
+     * VWorld와 연결된 후
+     * 응답 데이터를 기다리는 최대 시간입니다.
+     *
+     * 기본값: 5초
+     */
+    @Value("${vworld.geocoding.read-timeout-ms:5000}")
+    private int readTimeoutMs;
+
+    /*
+     * timeout / HTTP 오류 / VWorld 서비스 오류 등이
+     * 연속으로 몇 번 발생하면
+     * 해당 Sync에서 VWorld 외부 호출을 중단할지 설정합니다.
+     *
+     * NOT_FOUND는 서버 장애가 아니므로
+     * 이 횟수에 포함하지 않습니다.
+     */
+    @Value("${vworld.geocoding.consecutive-external-failure-threshold:3}")
+    private int consecutiveExternalFailureThreshold;
+
 
     public GeocodingSession newSession(
             String dataset
     ) {
+
         return new GeocodingSession(
                 dataset,
                 Math.max(
                         0,
                         maxApiCallsPerSync
+                ),
+                Math.max(
+                        1,
+                        consecutiveExternalFailureThreshold
                 )
         );
     }
@@ -144,8 +182,7 @@ public class VWorldGeocodingService {
                 );
 
         /*
-         * 같은 수집 실행 중 동일 주소가 다시 나오면
-         * DB도 다시 조회하지 않습니다.
+         * 같은 실행의 메모리 캐시
          */
         if (session.hasLocalCache(
                 cacheKey
@@ -159,25 +196,17 @@ public class VWorldGeocodingService {
                     );
 
             if (localResult.isPresent()) {
+
                 session.incrementResolvedCount();
+
                 return localResult.get();
             }
 
             return null;
         }
 
-        /*
-         * 이미 이번 수집의 VWorld 요청 한도를 모두 사용했다면
-         * 이후 새로운 주소는 이번 실행에서는 처리하지 않습니다.
-         *
-         * 다음 월간 sync에서 다시 처리됩니다.
+        /* db 캐시
          */
-        if (session.isApiLimitReached()) {
-
-            session.incrementLimitSkippedCount();
-
-            return null;
-        }
 
         CacheEntry cached =
                 findCache(
@@ -233,6 +262,18 @@ public class VWorldGeocodingService {
         }
 
         /*
+         * VWorld 외부 서버 장애가 연속으로 발생해
+         * circuit이 열린 상태라면
+         * 더 이상 실제 VWorld HTTP 요청을 보내지 않습니다.
+         *
+         * DB 캐시 조회는 위에서 이미 끝났으므로
+         * 캐시된 결과는 계속 사용할 수 있습니다.
+         */
+        if (session.isExternalCircuitOpen()) {
+            return null;
+        }
+
+        /*
          * 실제 외부 API 호출 전에
          * session 호출량을 확보합니다.
          */
@@ -242,7 +283,7 @@ public class VWorldGeocodingService {
 
             return null;
         }
-
+// 실제 호출
         try {
 
             URI uri =
@@ -295,7 +336,7 @@ public class VWorldGeocodingService {
                             .toUri();
 
             RestTemplate restTemplate =
-                    new RestTemplate();
+                    createVWorldRestTemplate();
 
             ResponseEntity<String> response =
                     restTemplate.getForEntity(
@@ -306,14 +347,20 @@ public class VWorldGeocodingService {
             String responseBody =
                     response.getBody();
 
+            /*
+             * HTTP 연결 자체는 됐지만
+             * 응답 body가 비어 있다면
+             * 정상적인 VWorld 응답으로 볼 수 없습니다.
+             */
             if (responseBody == null
                     || responseBody.isBlank()) {
 
-                session.incrementFailureCount();
-
-                session.putLocalCache(
+                registerExternalFailure(
+                        session,
                         cacheKey,
-                        Optional.empty()
+                        addressType,
+                        normalizedAddress,
+                        "응답 body가 비어 있음"
                 );
 
                 return null;
@@ -338,13 +385,18 @@ public class VWorldGeocodingService {
                             .asText("");
 
             /*
-             * 주소 자체가 VWorld에 없는 경우에는
-             * 30일 동안 같은 주소를 반복 조회하지 않도록
-             * NOT_FOUND를 캐시합니다.
+             * 주소 자체가 VWorld에 존재하지 않는 경우입니다.
+             *
+             * NOT_FOUND는 VWorld 서버 장애가 아니라
+             * 정상적인 API 응답입니다.
+             *
+             * 따라서 연속 외부 장애 횟수는 초기화합니다.
              */
             if ("NOT_FOUND".equalsIgnoreCase(
                     status
             )) {
+
+                session.resetConsecutiveExternalFailures();
 
                 saveNotFoundCache(
                         cacheKey,
@@ -363,29 +415,48 @@ public class VWorldGeocodingService {
             }
 
             /*
-             * API 장애 / 인증 오류 등은
-             * 영구적인 주소 실패로 판단하면 안 되므로
-             * DB 실패 캐시에는 저장하지 않습니다.
+             * OK / NOT_FOUND 외의 상태는
+             * 인증 문제, 서비스 오류 등일 가능성이 있으므로
+             * 외부 API 장애로 처리합니다.
+             *
+             * 이런 장애가 연속으로 일정 횟수 발생하면
+             * 해당 Sync에서는 VWorld 호출을 중단합니다.
              */
             if (!"OK".equalsIgnoreCase(
                     status
             )) {
 
-                session.incrementFailureCount();
-
-                session.putLocalCache(
+                registerExternalFailure(
+                        session,
                         cacheKey,
-                        Optional.empty()
+                        addressType,
+                        normalizedAddress,
+                        "VWorld status=" + status
                 );
 
                 return null;
             }
+
+            /*
+             * 여기까지 왔다는 것은
+             * VWorld가 정상적으로 OK 응답을 반환했다는 뜻입니다.
+             *
+             * 이전에 timeout 등의 장애가 있었더라도
+             * 연속 장애 횟수를 초기화합니다.
+             */
+            session.resetConsecutiveExternalFailures();
 
             JsonNode point =
                     responseNode
                             .path("result")
                             .path("point");
 
+            /*
+             * VWorld 응답 자체는 OK였으므로
+             * point가 없다고 해서 서버 장애 circuit을 올리지는 않습니다.
+             *
+             * 일반 지오코딩 실패로만 기록합니다.
+             */
             if (point.isMissingNode()
                     || point.isNull()) {
 
@@ -419,6 +490,14 @@ public class VWorldGeocodingService {
                                     .asText("")
                     );
 
+            /*
+             * API는 OK였지만 반환 좌표가
+             * 대한민국 범위를 벗어난 경우입니다.
+             *
+             * 이것 역시 VWorld 서버 장애라기보다
+             * 해당 주소 결과 문제로 보기 때문에
+             * circuit 장애 횟수에는 포함하지 않습니다.
+             */
             if (!isValidKoreaCoordinate(
                     latitude,
                     longitude
@@ -458,12 +537,53 @@ public class VWorldGeocodingService {
 
             return result;
 
+        } catch (JsonProcessingException e) {
+
+            /*
+             * HTTP 응답은 왔지만
+             * VWorld 응답 JSON 자체를 읽을 수 없는 경우입니다.
+             *
+             * 정상적인 VWorld 응답이 아니므로
+             * 외부 장애로 계산합니다.
+             */
+            registerExternalFailure(
+                    session,
+                    cacheKey,
+                    addressType,
+                    normalizedAddress,
+                    "응답 JSON 파싱 실패"
+            );
+
+            return null;
+
+        } catch (RestClientException e) {
+
+            /*
+             * connect timeout
+             * read timeout
+             * HTTP 4xx / 5xx
+             * 네트워크 연결 오류
+             *
+             * 모두 외부 VWorld 호출 장애로 처리합니다.
+             */
+            registerExternalFailure(
+                    session,
+                    cacheKey,
+                    addressType,
+                    normalizedAddress,
+                    e.getMessage()
+            );
+
+            return null;
+
         } catch (Exception e) {
 
             /*
-             * 외부 VWorld 장애 때문에
-             * CCTV / 보안등 / 치안시설 전체 sync까지
-             * 실패시키지 않습니다.
+             * DB 캐시 저장 오류 등
+             * VWorld 서버 자체의 장애라고 확정하기 어려운 예외입니다.
+             *
+             * 전체 Sync는 계속 진행시키되
+             * 외부 장애 circuit 횟수에는 포함하지 않습니다.
              */
             session.incrementFailureCount();
 
@@ -473,7 +593,7 @@ public class VWorldGeocodingService {
             );
 
             log.debug(
-                    "VWorld 지오코딩 실패. dataset={}, type={}, address={}, error={}",
+                    "VWorld 지오코딩 처리 실패. dataset={}, type={}, address={}, error={}",
                     session.dataset(),
                     addressType,
                     normalizedAddress,
@@ -482,6 +602,88 @@ public class VWorldGeocodingService {
 
             return null;
         }
+    }
+
+
+    /*
+     * VWorld HTTP 전용 RestTemplate을 생성합니다.
+     *
+     * connect timeout:
+     * 서버와 연결 자체를 맺는 최대 시간
+     *
+     * read timeout:
+     * 연결 이후 응답 데이터를 기다리는 최대 시간
+     */
+    private RestTemplate createVWorldRestTemplate() {
+
+        SimpleClientHttpRequestFactory requestFactory =
+                new SimpleClientHttpRequestFactory();
+
+        requestFactory.setConnectTimeout(
+                Math.max(
+                        1,
+                        connectTimeoutMs
+                )
+        );
+
+        requestFactory.setReadTimeout(
+                Math.max(
+                        1,
+                        readTimeoutMs
+                )
+        );
+
+        return new RestTemplate(
+                requestFactory
+        );
+    }
+
+
+    /*
+     * timeout / 네트워크 오류 / HTTP 오류 /
+     * 잘못된 VWorld 응답 등
+     * 외부 서비스 장애를 기록합니다.
+     */
+    private void registerExternalFailure(
+            GeocodingSession session,
+            String cacheKey,
+            String addressType,
+            String normalizedAddress,
+            String reason
+    ) {
+
+        session.incrementFailureCount();
+
+        session.putLocalCache(
+                cacheKey,
+                Optional.empty()
+        );
+
+        boolean circuitOpened =
+                session.recordExternalFailure();
+
+        if (circuitOpened) {
+
+            log.warn(
+                    "VWorld 연속 외부 장애 {}회로 이번 sync의 추가 VWorld 호출을 중단합니다. dataset={}, lastType={}, lastAddress={}, reason={}",
+                    session.consecutiveExternalFailureCount(),
+                    session.dataset(),
+                    addressType,
+                    normalizedAddress,
+                    reason
+            );
+
+            return;
+        }
+
+        log.debug(
+                "VWorld 외부 호출 실패. dataset={}, consecutiveFailure={}, type={}, address={}, reason={}",
+                session.dataset(),
+                session.consecutiveExternalFailureCount(),
+                addressType,
+                normalizedAddress,
+                reason
+        );
     }
 
 
@@ -778,6 +980,12 @@ public class VWorldGeocodingService {
 
         private final int maxApiCalls;
 
+        /*
+         * 외부 VWorld 장애가 몇 번 연속 발생하면
+         * 해당 Sync에서 외부 호출을 중단할지 나타냅니다.
+         */
+        private final int maxConsecutiveExternalFailures;
+
         private int apiCalls;
 
         private int cacheHits;
@@ -788,6 +996,23 @@ public class VWorldGeocodingService {
 
         private int limitSkippedCount;
 
+        /*
+         * timeout / HTTP 오류 / 서비스 오류 등
+         * 외부 VWorld 장애가 연속으로 발생한 횟수입니다.
+         *
+         * 정상 OK 또는 NOT_FOUND 응답을 받으면
+         * 다시 0으로 초기화됩니다.
+         */
+        private int consecutiveExternalFailureCount;
+
+        /*
+         * true가 되면 해당 Sync에서는
+         * 더 이상 새로운 VWorld HTTP 요청을 보내지 않습니다.
+         *
+         * 단, DB / 메모리 캐시는 계속 사용할 수 있습니다.
+         */
+        private boolean externalCircuitOpen;
+
         private final Map<
                 String,
                 Optional<GeocodingResult>
@@ -797,13 +1022,18 @@ public class VWorldGeocodingService {
 
         private GeocodingSession(
                 String dataset,
-                int maxApiCalls
+                int maxApiCalls,
+                int maxConsecutiveExternalFailures
         ) {
+
             this.dataset =
                     dataset;
 
             this.maxApiCalls =
                     maxApiCalls;
+
+            this.maxConsecutiveExternalFailures =
+                    maxConsecutiveExternalFailures;
         }
 
 
@@ -819,9 +1049,43 @@ public class VWorldGeocodingService {
         }
 
 
-        private boolean isApiLimitReached() {
+        private boolean isExternalCircuitOpen() {
 
-            return apiCalls >= maxApiCalls;
+            return externalCircuitOpen;
+        }
+
+
+        /*
+         * VWorld 외부 장애가 발생했을 때 호출합니다.
+         *
+         * 반환값 true:
+         * 이번 장애로 circuit이 새롭게 열린 경우
+         */
+        private boolean recordExternalFailure() {
+
+            consecutiveExternalFailureCount++;
+
+            if (!externalCircuitOpen
+                    && consecutiveExternalFailureCount
+                    >= maxConsecutiveExternalFailures) {
+
+                externalCircuitOpen = true;
+
+                return true;
+            }
+
+            return false;
+        }
+
+
+        /*
+         * VWorld 서버에서 정상적인 응답
+         * OK 또는 NOT_FOUND를 받으면
+         * 연속 장애 횟수를 초기화합니다.
+         */
+        private void resetConsecutiveExternalFailures() {
+
+            consecutiveExternalFailureCount = 0;
         }
 
 
@@ -858,52 +1122,74 @@ public class VWorldGeocodingService {
 
 
         private void incrementCacheHits() {
+
             cacheHits++;
         }
 
 
         private void incrementResolvedCount() {
+
             resolvedCount++;
         }
 
 
         private void incrementFailureCount() {
+
             failureCount++;
         }
 
 
         private void incrementLimitSkippedCount() {
+
             limitSkippedCount++;
         }
 
 
         public String dataset() {
+
             return dataset;
         }
 
 
         public int apiCalls() {
+
             return apiCalls;
         }
 
 
         public int cacheHits() {
+
             return cacheHits;
         }
 
 
         public int resolvedCount() {
+
             return resolvedCount;
         }
 
 
         public int failureCount() {
+
             return failureCount;
         }
 
 
         public int limitSkippedCount() {
+
             return limitSkippedCount;
+        }
+
+
+        public int consecutiveExternalFailureCount() {
+
+            return consecutiveExternalFailureCount;
+        }
+
+
+        public boolean externalCircuitOpen() {
+
+            return externalCircuitOpen;
         }
     }
 }
