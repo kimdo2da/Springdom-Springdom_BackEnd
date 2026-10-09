@@ -45,8 +45,6 @@ public class VWorldGeocodingService {
      *
      * 캐시 조회는 이 숫자에 포함되지 않습니다.
      *
-     * 3번 이슈에서 별도로 조정할 예정이므로
-     * 이번 수정에서는 기존 500을 유지합니다.
      */
     @Value("${vworld.geocoding.max-api-calls-per-sync:500}")
     private int maxApiCallsPerSync;
@@ -184,8 +182,7 @@ public class VWorldGeocodingService {
                 );
 
         /*
-         * 같은 수집 실행 중 동일 주소가 다시 나오면
-         * DB도 다시 조회하지 않습니다.
+         * 같은 실행의 메모리 캐시
          */
         if (session.hasLocalCache(
                 cacheKey
@@ -208,19 +205,8 @@ public class VWorldGeocodingService {
             return null;
         }
 
-        /*
-         * 기존 구조를 그대로 유지합니다.
-         *
-         * 이 위치는 프론트 수정요청서의
-         * 2번 이슈와 관련되어 있지만
-         * 이번에는 1번만 수정하므로 건드리지 않습니다.
+        /* db 캐시
          */
-        if (session.isApiLimitReached()) {
-
-            session.incrementLimitSkippedCount();
-
-            return null;
-        }
 
         CacheEntry cached =
                 findCache(
@@ -297,7 +283,7 @@ public class VWorldGeocodingService {
 
             return null;
         }
-
+// 실제 호출
         try {
 
             URI uri =
@@ -1060,12 +1046,6 @@ public class VWorldGeocodingService {
             apiCalls++;
 
             return true;
-        }
-
-
-        private boolean isApiLimitReached() {
-
-            return apiCalls >= maxApiCalls;
         }
 
 
