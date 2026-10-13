@@ -1,7 +1,9 @@
 package com.example.lightsafe.safe;
 
+import com.example.lightsafe.common.exception.BadRequestException;
 import com.example.lightsafe.common.response.ApiResponse;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -14,18 +16,35 @@ public class CctvController {
     public CctvController(
             CctvService cctvService
     ) {
-        this.cctvService = cctvService;
+        this.cctvService =
+                cctvService;
     }
 
     @GetMapping("/cctvs")
-    public ApiResponse<List<CctvDto>> getCctvs() {
+    public ApiResponse<List<CctvDto>> getCctvs(
+            @RequestParam(required = false) Double minLat,
+            @RequestParam(required = false) Double maxLat,
+            @RequestParam(required = false) Double minLng,
+            @RequestParam(required = false) Double maxLng
+    ) {
+        if (minLat == null
+                || maxLat == null
+                || minLng == null
+                || maxLng == null) {
 
-        List<CctvDto> data =
-                cctvService.getCctvData();
+            throw new BadRequestException(
+                    "minLat, maxLat, minLng, maxLng를 모두 입력해야 합니다."
+            );
+        }
 
         return ApiResponse.ok(
-                data,
-                "CCTV 전체 조회 성공"
+                cctvService.getCctvsInBounds(
+                        minLat,
+                        maxLat,
+                        minLng,
+                        maxLng
+                ),
+                "CCTV 범위 조회 성공"
         );
     }
 }

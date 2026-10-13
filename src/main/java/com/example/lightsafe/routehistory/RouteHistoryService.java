@@ -5,6 +5,7 @@ import com.example.lightsafe.safe.RouteRequestDto;
 import com.example.lightsafe.user.CurrentUserService;
 import com.example.lightsafe.user.User;
 import com.example.lightsafe.user.UserRepository;
+import com.example.lightsafe.emergency.Cctv;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
